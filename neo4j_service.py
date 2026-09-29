@@ -206,13 +206,13 @@ def get_students() -> list[dict[str, Any]]:
 
 
 def get_dashboard_metrics() -> dict[str, int]:
+    # COUNT subqueries always return a row, even when a count is 0
     rows = query(
         """
-        MATCH (s:Student) WITH count(s) AS students
-        MATCH (b:Book) WITH students, count(b) AS books
-        MATCH ()-[r:BORROWED]->() WITH students, books, count(r) AS borrows
-        MATCH ()-[f:FRIEND_OF]->()
-        RETURN students, books, borrows, count(f) AS friendships
+        RETURN COUNT { (:Student) } AS students,
+               COUNT { (:Book) } AS books,
+               COUNT { ()-[:BORROWED]->() } AS borrows,
+               COUNT { ()-[:FRIEND_OF]->() } AS friendships
         """
     )
     return rows[0] if rows else {"students": 0, "books": 0, "borrows": 0, "friendships": 0}
@@ -332,4 +332,223 @@ def graph_neighborhood(student_id: str, limit: int = 40) -> list[dict[str, Any]]
         LIMIT $limit
         """,
         {"student_id": student_id, "limit": int(limit)},
+    )
+
+
+# =====================================================================
+# CRUD: Student
+# =====================================================================
+def get_student(student_id: str) -> dict[str, Any] | None:
+    rows = query(
+        "MATCH (s:Student {student_id:$id}) "
+        "RETURN s.student_id AS student_id, s.name AS name, s.major AS major, s.year AS year",
+        {"id": student_id},
+    )
+    return rows[0] if rows else None
+
+
+def create_student(student_id: str, name: str, major: str, year: int) -> bool:
+    """Return False if student_id already exists."""
+    if get_student(student_id):
+        return False
+    query(
+        "CREATE (:Student {student_id:$id, name:$name, major:$major, year:$year})",
+        {"id": student_id, "name": name, "major": major, "year": year},
+        write=True,
+    )
+    return True
+
+
+def update_student(student_id: str, name: str, major: str, year: int) -> None:
+    query(
+        "MATCH (s:Student {student_id:$id}) SET s.name=$name, s.major=$major, s.year=$year",
+        {"id": student_id, "name": name, "major": major, "year": year},
+        write=True,
+    )
+
+
+def delete_student(student_id: str) -> None:
+    query("MATCH (s:Student {student_id:$id}) DETACH DELETE s", {"id": student_id}, write=True)
+
+
+# =====================================================================
+# CRUD: Author
+# =====================================================================
+def list_authors() -> list[dict[str, Any]]:
+    return query("MATCH (a:Author) RETURN a.author_id AS author_id, a.name AS name ORDER BY a.author_id")
+
+
+def create_author(author_id: str, name: str) -> bool:
+    if query("MATCH (a:Author {author_id:$id}) RETURN 1 AS x", {"id": author_id}):
+        return False
+    query("CREATE (:Author {author_id:$id, name:$name})", {"id": author_id, "name": name}, write=True)
+    return True
+
+
+def update_author(author_id: str, name: str) -> None:
+    query("MATCH (a:Author {author_id:$id}) SET a.name=$name", {"id": author_id, "name": name}, write=True)
+
+
+def delete_author(author_id: str) -> None:
+    query("MATCH (a:Author {author_id:$id}) DETACH DELETE a", {"id": author_id}, write=True)
+
+
+# =====================================================================
+# CRUD: Category
+# =====================================================================
+def create_category(name: str) -> bool:
+    if query("MATCH (c:Category {name:$n}) RETURN 1 AS x", {"n": name}):
+        return False
+    query("CREATE (:Category {name:$n})", {"n": name}, write=True)
+    return True
+
+
+def rename_category(old: str, new: str) -> bool:
+    """Return False if the new name is already used by another category."""
+    if old != new and query("MATCH (c:Category {name:$n}) RETURN 1 AS x", {"n": new}):
+        return False
+    query("MATCH (c:Category {name:$old}) SET c.name=$new", {"old": old, "new": new}, write=True)
+    return True
+
+
+def delete_category(name: str) -> None:
+    query("MATCH (c:Category {name:$n}) DETACH DELETE c", {"n": name}, write=True)
+
+
+# =====================================================================
+# CRUD: Book
+# =====================================================================
+def get_book(book_id: str) -> dict[str, Any] | None:
+    rows = query(
+        """
+        MATCH (b:Book {book_id:$id})
+        OPTIONAL MATCH (a:Author)-[:WROTE]->(b)
+        OPTIONAL MATCH (b)-[:IN_CATEGORY]->(c:Category)
+        RETURN b.book_id AS book_id, b.title AS title, b.year AS year,
+               collect(DISTINCT a.author_id) AS author_ids,
+               collect(DISTINCT c.name) AS categories
+        """,
+        {"id": book_id},
+    )
+    return rows[0] if rows else None
+
+
+def set_book_relations(book_id: str, author_ids: list[str], categories: list[str]) -> None:
+    """Replace the WROTE and IN_CATEGORY relationships of a book."""
+    query("MATCH (:Author)-[w:WROTE]->(:Book {book_id:$id}) DELETE w", {"id": book_id}, write=True)
+    query("MATCH (b:Book {book_id:$id})-[r:IN_CATEGORY]->(:Category) DELETE r", {"id": book_id}, write=True)
+    if author_ids:
+        query(
+            """
+            MATCH (b:Book {book_id:$id})
+            UNWIND $ids AS aid
+            MATCH (a:Author {author_id:aid})
+            MERGE (a)-[:WROTE]->(b)
+            """,
+            {"id": book_id, "ids": author_ids},
+            write=True,
+        )
+    if categories:
+        query(
+            """
+            MATCH (b:Book {book_id:$id})
+            UNWIND $cats AS cname
+            MATCH (c:Category {name:cname})
+            MERGE (b)-[:IN_CATEGORY]->(c)
+            """,
+            {"id": book_id, "cats": categories},
+            write=True,
+        )
+
+
+def create_book(book_id: str, title: str, year: int, author_ids: list[str], categories: list[str]) -> bool:
+    if get_book(book_id):
+        return False
+    query("CREATE (:Book {book_id:$id, title:$title, year:$year})",
+          {"id": book_id, "title": title, "year": year}, write=True)
+    set_book_relations(book_id, author_ids, categories)
+    return True
+
+
+def update_book(book_id: str, title: str, year: int, author_ids: list[str], categories: list[str]) -> None:
+    query("MATCH (b:Book {book_id:$id}) SET b.title=$title, b.year=$year",
+          {"id": book_id, "title": title, "year": year}, write=True)
+    set_book_relations(book_id, author_ids, categories)
+
+
+def delete_book(book_id: str) -> None:
+    query("MATCH (b:Book {book_id:$id}) DETACH DELETE b", {"id": book_id}, write=True)
+
+
+# =====================================================================
+# CRUD: Relationships
+# =====================================================================
+def get_friend_ids(student_id: str) -> list[str]:
+    rows = query(
+        "MATCH (:Student {student_id:$id})-[:FRIEND_OF]-(f:Student) RETURN DISTINCT f.student_id AS fid",
+        {"id": student_id},
+    )
+    return [r["fid"] for r in rows]
+
+
+def set_friends(student_id: str, friend_ids: list[str]) -> None:
+    """Replace all friendships of a student (treated as symmetric)."""
+    query("MATCH (:Student {student_id:$id})-[r:FRIEND_OF]-(:Student) DELETE r", {"id": student_id}, write=True)
+    if friend_ids:
+        query(
+            """
+            MATCH (s:Student {student_id:$id})
+            UNWIND $ids AS fid
+            MATCH (f:Student {student_id:fid}) WHERE f <> s
+            MERGE (s)-[:FRIEND_OF]->(f)
+            """,
+            {"id": student_id, "ids": friend_ids},
+            write=True,
+        )
+
+
+def set_interests(student_id: str, categories: list[str]) -> None:
+    query("MATCH (:Student {student_id:$id})-[r:INTERESTED_IN]->(:Category) DELETE r", {"id": student_id}, write=True)
+    if categories:
+        query(
+            """
+            MATCH (s:Student {student_id:$id})
+            UNWIND $cats AS cname
+            MATCH (c:Category {name:cname})
+            MERGE (s)-[:INTERESTED_IN]->(c)
+            """,
+            {"id": student_id, "cats": categories},
+            write=True,
+        )
+
+
+def list_borrows(student_id: str) -> list[dict[str, Any]]:
+    return query(
+        """
+        MATCH (:Student {student_id:$id})-[r:BORROWED]->(b:Book)
+        RETURN b.book_id AS book_id, b.title AS title,
+               toString(r.borrow_date) AS borrow_date, r.rating AS rating
+        ORDER BY r.borrow_date DESC
+        """,
+        {"id": student_id},
+    )
+
+
+def update_borrow(student_id: str, book_id: str, borrow_date: str, rating: float | None) -> None:
+    """Setting rating to None removes the rating property."""
+    query(
+        """
+        MATCH (:Student {student_id:$sid})-[r:BORROWED]->(:Book {book_id:$bid})
+        SET r.borrow_date = date($d), r.rating = $rating
+        """,
+        {"sid": student_id, "bid": book_id, "d": borrow_date, "rating": rating},
+        write=True,
+    )
+
+
+def delete_borrow(student_id: str, book_id: str) -> None:
+    query(
+        "MATCH (:Student {student_id:$sid})-[r:BORROWED]->(:Book {book_id:$bid}) DELETE r",
+        {"sid": student_id, "bid": book_id},
+        write=True,
     )

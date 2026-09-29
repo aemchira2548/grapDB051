@@ -9,9 +9,9 @@ from neo4j import GraphDatabase, RoutingControl
 def _config() -> tuple[str, str, str, str]:
     cfg = st.secrets["neo4j"]
     return (
-        cfg["URI"],
-        cfg["USERNAME"],
-        cfg["PASSWORD"],
+        cfg["uri"],
+        cfg["username"],
+        cfg["password"],
         cfg.get("database", "91f3924e"),
     )
 

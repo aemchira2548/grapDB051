@@ -75,26 +75,63 @@ def dlabel(name: str) -> str:
 
 
 _BASE = Path(__file__).parent
-
-
-def drink_image_path(name: str) -> Path | None:
-    """Prefer a real photo in images/photos/<Drink_Name>.jpg|png|webp, else the drawn icon in images/."""
-    stem = name.replace(" ", "_")
-    for folder, exts in (("images/photos", ("jpg", "jpeg", "png", "webp")), ("images", ("png",))):
-        for ext in exts:
-            p = _BASE / folder / f"{stem}.{ext}"
-            if p.exists():
-                return p
-    return None
+_IMG_EXTS = (".jpg", ".jpeg", ".png", ".webp")
+# ชื่อเครื่องดื่มในฐานข้อมูล -> ชื่อไฟล์ (ตัวพิมพ์เล็ก ไม่รวมนามสกุล)
+_IMG_ALIASES = {"มัทฉะlatte": "matcha_latte"}
 
 
 @st.cache_data(show_spinner=False)
-def drink_image_uri(name: str) -> str:
+def _image_index() -> dict[str, Path]:
+    """Map lowercase file stem -> path. Case-insensitive (Streamlit Cloud runs on Linux).
+    Priority: images/photos/* > photos in images/ (jpg/webp) > drawn icons (png in images/)."""
+    best: dict[str, tuple[tuple[int, int], Path]] = {}
+    for folder in ("images", "images/photos"):
+        d = _BASE / folder
+        if not d.is_dir():
+            continue
+        for p in d.iterdir():
+            ext = p.suffix.lower()
+            if ext not in _IMG_EXTS:
+                continue
+            rank = (0 if (ext == ".png" and folder == "images") else 1, 1 if folder.endswith("photos") else 0)
+            key = p.stem.lower()
+            if key not in best or rank > best[key][0]:
+                best[key] = (rank, p)
+    return {k: v[1] for k, v in best.items()}
+
+
+def drink_image_path(name: str) -> Path | None:
+    idx = _image_index()
+    key = name.strip().lower()
+    key = _IMG_ALIASES.get(key, key).replace(" ", "_")
+    return idx.get(key) or idx.get(name.strip().lower().replace(" ", "_"))
+
+
+@st.cache_data(show_spinner=False)
+def drink_image_data(name: str) -> tuple[bytes, str] | None:
+    """Return (bytes, mime) resized to max 500px so big phone photos stay light."""
     p = drink_image_path(name)
     if not p:
-        return ""
-    mime = "jpeg" if p.suffix.lower() in (".jpg", ".jpeg") else p.suffix.lower().lstrip(".")
-    return f"data:image/{mime};base64," + b64encode(p.read_bytes()).decode()
+        return None
+    try:
+        from io import BytesIO
+        from PIL import Image
+
+        im = Image.open(p)
+        im.thumbnail((500, 500))
+        buf = BytesIO()
+        if p.suffix.lower() == ".png":
+            im.save(buf, format="PNG")
+            return buf.getvalue(), "image/png"
+        im.convert("RGB").save(buf, format="JPEG", quality=85)
+        return buf.getvalue(), "image/jpeg"
+    except Exception:
+        return None
+
+
+def drink_image_uri(name: str) -> str:
+    d = drink_image_data(name)
+    return f"data:{d[1]};base64," + b64encode(d[0]).decode() if d else ""
 
 
 def flash(msg: str) -> None:
@@ -225,10 +262,10 @@ elif page == "Drink Search":
     if rows:
         cols = st.columns(5)
         for i, r in enumerate(rows):
-            p = drink_image_path(r["drink"])
+            d = drink_image_data(r["drink"])
             with cols[i % 5]:
-                if p:
-                    st.image(str(p), use_container_width=True)
+                if d:
+                    st.image(d[0], use_container_width=True)
                 st.caption(f"**{dlabel(r['drink'])}**  \nชอบ {r['likes']} · ไม่ชอบ {r['dislikes']}")
         with st.expander("ดูเป็นตาราง"):
             df = pd.DataFrame(rows)

@@ -1,133 +1,129 @@
-# GraphBook Recommendation System
+# DrinkGraph Recommendation System
 
-โปรเจ็คตัวอย่างระดับปริญญาตรีสำหรับรายวิชา Graph Database / Advanced Database
-พัฒนาด้วย **Streamlit + Neo4j Aura + Cypher** และออกแบบให้ deploy ผ่าน **GitHub → Streamlit Community Cloud** ได้โดยตรง
+ระบบแนะนำเครื่องดื่มด้วย **Graph Database** พัฒนาด้วย **Streamlit + Neo4j Aura + Cypher**
+แนะนำเครื่องดื่มใหม่จากคนที่ชอบเครื่องดื่มคล้ายกัน (Collaborative Filtering) และอธิบายเหตุผลของคำแนะนำได้
+รองรับการ **เพิ่ม / แก้ไข / ลบ** ข้อมูล และ deploy ผ่าน **GitHub → Streamlit Community Cloud**
 
-## 1. แนวคิดของระบบ
-
-ระบบใช้ Property Graph ดังนี้
+## 1. Graph Schema
 
 ```text
-(Student)-[:FRIEND_OF]-(Student)
-(Student)-[:BORROWED {borrow_date, rating}]->(Book)
-(Student)-[:INTERESTED_IN]->(Category)
-(Book)-[:IN_CATEGORY]->(Category)
-(Author)-[:WROTE]->(Book)
+(:User {name})-[:LIKES]->(:Drink {name})
+(:User {name})-[:DISLIKES]->(:Drink {name})
 ```
 
-จุดเด่นคือคำแนะนำอธิบายได้ (Explainable Recommendation) ว่าหนังสือถูกแนะนำเพราะ
-1. เพื่อนของผู้ใช้เคยยืม
-2. หมวดหนังสือตรงกับความสนใจ
-3. หนังสือได้รับความนิยม
-4. หนังสือมีคะแนนเฉลี่ยดี
+- ผู้ใช้หนึ่งคนไม่สามารถทั้งชอบและไม่ชอบเครื่องดื่มเดียวกัน (ระบบบังคับในหน้า Like / Dislike และ Manage Data)
+- มี Unique Constraint บน `User.name` และ `Drink.name`
 
-ตัวอย่างคะแนน Hybrid:
+## 2. หลักการแนะนำ
 
-```text
-score = friend_count*3
-      + interest_matches*2
-      + popularity*0.20
-      + average_rating*0.50
+```cypher
+MATCH (u:User {name:$name})
+MATCH (d:Drink)
+WHERE NOT (u)-[:LIKES]->(d) AND NOT (u)-[:DISLIKES]->(d)
+OPTIONAL MATCH (u)-[:LIKES]->(sd:Drink)<-[:LIKES]-(o:User)-[:LIKES]->(d)
+WHERE o <> u
+RETURN d.name, count(o) AS score
+ORDER BY score DESC
 ```
 
-สูตรนี้เป็น heuristic เพื่อการเรียนการสอน ไม่ใช่โมเดล ML ที่ผ่านการ optimize
+1. หาเครื่องดื่มที่ผู้ใช้ชอบ
+2. หาผู้ใช้คนอื่นที่ชอบเครื่องดื่มเดียวกัน
+3. ดูเครื่องดื่มอื่นที่คนกลุ่มนั้นชอบ (ตัดที่ผู้ใช้ชอบหรือไม่ชอบอยู่แล้ว)
+4. **score = จำนวนเส้นทาง** ยิ่งมีเส้นทางมากยิ่งแนะนำน้ำหนักมาก
 
-## 2. โครงสร้างไฟล์
+ตัวอย่าง ผู้ใช้ Guy (ชอบ Bubble Milk Tea, Cocoa / ไม่ชอบ Americano)
+
+| อันดับ | เครื่องดื่ม | score | เหตุผล |
+|---|---|---|---|
+| 1 | Green Tea | 4 | May, Min, Nut ชอบด้วย |
+| 2 | Fresh Milk | 3 | Fah, Min ชอบด้วย |
+| 3 | มัทฉะLatte | 1 | Nut ชอบด้วย |
+
+## 3. เมนูในแอป
+
+| เมนู | หน้าที่ |
+|---|---|
+| Dashboard | สรุปจำนวน User / Drink / LIKES / DISLIKES, กราฟความนิยม, ความชอบของผู้ใช้ |
+| Recommendations | เครื่องดื่มที่แนะนำ พร้อม score และเหตุผล |
+| Drink Search | ค้นหาเครื่องดื่ม ดูจำนวนคนที่ชอบ/ไม่ชอบ |
+| Like / Dislike | ตั้งค่า ชอบ / ไม่ชอบ / ล้างความรู้สึก ให้ผู้ใช้กับเครื่องดื่ม |
+| Graph Explorer | วาดกราฟรอบผู้ใช้ (เส้นเขียว = LIKES, เส้นแดงประ = DISLIKES) |
+| Manage Data (CRUD) | เพิ่ม/เปลี่ยนชื่อ/ลบ ผู้ใช้และเครื่องดื่ม (พร้อมอัปโหลด/เปลี่ยน/ลบรูป), แก้ความชอบทั้งชุด |
+| Admin / Setup | สร้าง Constraint + ข้อมูลตัวอย่าง (กดซ้ำได้), ล้างข้อมูล User/Drink |
+
+## 3.1 รูปเครื่องดื่ม
+
+ทุกรูปถูกครอปกลางภาพเป็นสี่เหลี่ยมจัตุรัส 400×400 พิกเซลให้เท่ากันอัตโนมัติ ลำดับการเลือกรูป
+
+1. รูปที่อัปโหลดผ่านหน้า **Manage Data → เครื่องดื่ม** (เก็บใน Neo4j เป็นคุณสมบัติ `image` ของ node Drink จึงไม่หายเมื่อแอปรีสตาร์ท)
+2. ไฟล์ในโฟลเดอร์ `images/photos/` หรือ `images/` (ชื่อไฟล์ไม่สนตัวพิมพ์ใหญ่เล็ก เช่น `Latte.jpg`, `green_tea.jpg`; `มัทฉะLatte` ใช้ไฟล์ `Matcha_Latte.jpg`)
+3. ภาพวาดไอคอน (.png) ในโฟลเดอร์ `images/`
+
+## 4. โครงสร้างไฟล์
 
 ```text
-book_graph_recommender/
-├── app.py
-├── neo4j_service.py
+drink_graph/
+├── app.py              # หน้าจอ Streamlit
+├── neo4j_service.py    # Cypher + การเชื่อมต่อ Neo4j (แยกจาก UI)
 ├── requirements.txt
-├── .gitignore
-├── .streamlit/
-│   └── secrets.toml.example
-└── cypher/
-    └── schema.cypher
+└── README.md
 ```
 
-## 3. สร้าง Neo4j Aura
+## 5. สร้าง Neo4j Aura
 
 1. สร้าง AuraDB instance
-2. เก็บค่า Connection URI, username และ password
-3. URI ของ Aura โดยทั่วไปอยู่ในรูป `neo4j+s://...databases.neo4j.io`
-4. อย่านำ password ไปใส่ในไฟล์ที่ commit ขึ้น GitHub
+2. เก็บ Connection URI (รูปแบบ `neo4j+s://xxxxxxxx.databases.neo4j.io`), username และ password
+3. ตรวจว่า instance อยู่ในสถานะ **Running** (Aura ฟรีจะถูก pause ถ้าไม่ได้ใช้นาน)
 
-## 4. รันในเครื่อง
+## 6. รันในเครื่อง
 
 ```bash
 python -m venv .venv
-# Windows
-.venv\Scripts\activate
-# macOS/Linux
-source .venv/bin/activate
-
+# Windows:      .venv\Scripts\activate
+# macOS/Linux:  source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-คัดลอกไฟล์ตัวอย่าง secrets
+สร้างไฟล์ `.streamlit/secrets.toml` (อย่า commit ไฟล์นี้)
 
-```bash
-cp .streamlit/secrets.toml.example .streamlit/secrets.toml
+```toml
+[neo4j]
+uri = "neo4j+s://xxxxxxxx.databases.neo4j.io"
+username = "neo4j"
+password = "รหัสผ่านจริง"
+# database = "..."   # ไม่ต้องใส่ก็ได้ จะใช้ database หลักของ instance
 ```
 
-จากนั้นใส่ credential จริง แล้วรัน
+จากนั้นรัน
 
 ```bash
 streamlit run app.py
 ```
 
-## 5. ครั้งแรกที่เปิดระบบ
+## 7. ครั้งแรกที่เปิดระบบ
 
 1. เข้าเมนู **Admin / Setup**
-2. กด **สร้าง Constraint + Demo Data**
-3. ระบบใช้ `MERGE` จึงกดซ้ำได้โดยไม่สร้าง node ซ้ำจาก key เดิม
-4. จากนั้นทดลอง Dashboard, Recommendations, Search, Borrow/Rate และ Graph Explorer
+2. กด **สร้าง Constraint + Demo Data** (ใช้ `MERGE` จึงกดซ้ำได้)
+3. ทดลองเมนู Dashboard, Recommendations และ Manage Data
 
-## 6. Deploy GitHub → Streamlit Community Cloud
+ข้อมูลตัวอย่างมี 10 ผู้ใช้ (Guy, May, Nut, Min, Ball, Fah, Beam, Praew, Ton, Fon), 10 เครื่องดื่ม, 29 LIKES และ 10 DISLIKES
 
-1. สร้าง GitHub repository ใหม่
-2. push ไฟล์ทั้งหมดขึ้น GitHub **ยกเว้น `.streamlit/secrets.toml`**
-3. เข้า Streamlit Community Cloud แล้วเลือก Create app
-4. เลือก repository, branch และ entrypoint = `app.py`
-5. ใน Advanced settings → Secrets ใส่
+## 8. Deploy: GitHub → Streamlit Community Cloud
 
-```toml
-[neo4j]
-uri = "neo4j+s://YOUR_INSTANCE.databases.neo4j.io"
-username = "neo4j"
-password = "YOUR_PASSWORD"
-database = "neo4j"
-```
+1. สร้าง GitHub repository แล้ว push ไฟล์ทั้งหมด **ยกเว้น `.streamlit/secrets.toml`**
+2. เข้า Streamlit Community Cloud → Create app → เลือก repository, branch และ entrypoint = `app.py`
+3. ที่ Advanced settings → Secrets ใส่ค่าเดียวกับหัวข้อ 6
+4. กด Deploy
 
-6. Deploy
+## 9. การแก้ปัญหาที่พบบ่อย
 
-## 7. ประเด็น Graph Database ที่นักศึกษาจะได้ฝึก
+| อาการ | สาเหตุ / วิธีแก้ |
+|---|---|
+| `DatabaseNotFound ... database 'neo4j' does not exist` | instance ใช้ชื่อ database อื่น ให้ลบบรรทัด `database` ออกจาก Secrets หรือใส่ชื่อจริงของ instance |
+| เชื่อมต่อไม่สำเร็จ / timeout | ตรวจ `uri` และ `password` ใน Secrets, ตรวจว่า instance ไม่ถูก pause |
+| ไม่มีผู้ใช้ให้เลือก | ไปที่ Admin / Setup แล้วกดสร้างข้อมูลตัวอย่าง |
+| ปุ่มล้างข้อมูลลบอะไรบ้าง | ลบเฉพาะ node `:User` และ `:Drink` เท่านั้น ข้อมูลอื่นใน database ไม่ถูกแตะ |
 
-- Node, Label, Property
-- Relationship และ Direction
-- Constraint และ Unique Key
-- `MATCH`, `MERGE`, `OPTIONAL MATCH`, `WITH`, `UNWIND`
-- Graph traversal ผ่านเพื่อน → หนังสือ
-- Aggregation เช่น `count`, `avg`, `collect`
-- Recommendation จาก topology ของกราฟ
-- Parameterized Cypher
-- Python Driver และ connection pooling
-- Streamlit UI
-- Secrets และ cloud deployment
+## 10. แนวทางต่อยอด
 
-## 8. สิ่งที่ปรับปรุงจาก notebook ต้นแบบ
-
-- ใช้ label `Student` ให้สอดคล้องทั้งระบบ แทนการปะปน `Student2`/`Student`
-- ใช้ `MERGE` ใน seed data เพื่อรองรับการรันซ้ำ
-- เพิ่ม Unique Constraints
-- ใช้ parameterized Cypher แทนการต่อ string จาก input
-- มอง `FRIEND_OF` เป็นความสัมพันธ์เชิงสมมาตรตอน query ด้วย `-[:FRIEND_OF]-`
-- เพิ่ม Author, Category และ Interest เพื่อให้ recommendation มีมิติด้าน content
-- เพิ่ม rating และ popularity เพื่อสร้าง Hybrid Score
-- แยก database layer (`neo4j_service.py`) ออกจาก UI (`app.py`)
-- ใช้ Streamlit Secrets แทนการ hardcode Aura credential
-
-## 9. แนวทางต่อยอดเป็นโครงงานนักศึกษา
-
-สามารถเพิ่ม Login, Favorite/Wishlist, การคืนหนังสือ, due date, collaborative filtering, Graph Data Science similarity, PageRank, community detection, evaluation metrics เช่น Precision@K/Recall@K และระบบผู้ดูแลได้
+เพิ่มหมวดเครื่องดื่ม (กาแฟ/ชา/นม), ให้คะแนนความชอบ 1–5, Login, Graph Data Science (similarity, PageRank, community detection) และวัดผลด้วย Precision@K / Recall@K

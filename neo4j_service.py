@@ -39,9 +39,9 @@ DISLIKES = [
 # ---------------------------------------------------------------------------
 # Connection
 # ---------------------------------------------------------------------------
-def _config() -> tuple[str, str, str, str]:
+def _config() -> tuple[str, str, str, str | None]:
     cfg = st.secrets["neo4j"]
-    return cfg["uri"], cfg["username"], cfg["password"], cfg.get("database", "91f3924e")
+    return cfg["uri"], cfg["username"], cfg["password"], cfg.get("database") or None  # None = home database ของ instance
 
 
 @st.cache_resource(show_spinner=False)
@@ -232,11 +232,27 @@ def delete_user(name: str) -> None:
 # ---------------------------------------------------------------------------
 # CRUD: Drink
 # ---------------------------------------------------------------------------
-def create_drink(name: str) -> bool:
+def create_drink(name: str, image: str | None = None) -> bool:
     if _exists("Drink", name):
         return False
     query("CREATE (:Drink {name:$n})", {"n": name}, write=True)
+    if image:
+        set_drink_image(name, image)
     return True
+
+
+def get_drink_images() -> dict[str, str]:
+    """Uploaded photos stored on Drink nodes as data URIs (square JPEG)."""
+    rows = query("MATCH (d:Drink) WHERE d.image IS NOT NULL RETURN d.name AS name, d.image AS image")
+    return {r["name"]: r["image"] for r in rows}
+
+
+def set_drink_image(name: str, data_uri: str) -> None:
+    query("MATCH (d:Drink {name:$n}) SET d.image=$img", {"n": name, "img": data_uri}, write=True)
+
+
+def clear_drink_image(name: str) -> None:
+    query("MATCH (d:Drink {name:$n}) REMOVE d.image", {"n": name}, write=True)
 
 
 def rename_drink(old: str, new: str) -> bool:

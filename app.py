@@ -1,18 +1,22 @@
 from __future__ import annotations
 
-from base64 import b64encode
+from base64 import b64decode, b64encode
 from html import escape
+from io import BytesIO
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+from PIL import Image, ImageOps
 
 from neo4j_service import (
     create_drink,
     create_user,
+    clear_drink_image,
     delete_drink,
     delete_user,
     get_dashboard_metrics,
+    get_drink_images,
     get_drink_stats,
     get_drinks,
     get_preferences,
@@ -24,6 +28,7 @@ from neo4j_service import (
     rename_user,
     reset_drink_data,
     seed_demo_data,
+    set_drink_image,
     set_preference,
     set_preferences,
 )
@@ -107,26 +112,71 @@ def drink_image_path(name: str) -> Path | None:
     return idx.get(key) or idx.get(name.strip().lower().replace(" ", "_"))
 
 
+IMG_SIZE = 400  # ทุกรูปถูกครอปกลางภาพเป็นสี่เหลี่ยมจัตุรัสขนาดเท่ากัน
+
+
+def to_square_data_uri(uploaded, size: int = IMG_SIZE) -> str:
+    """Uploaded file -> square JPEG data URI (center-crop, EXIF-rotated, transparent -> white)."""
+    im = ImageOps.exif_transpose(Image.open(uploaded))
+    if im.mode in ("RGBA", "LA", "P"):
+        im = im.convert("RGBA")
+        bg = Image.new("RGB", im.size, "white")
+        bg.paste(im, mask=im.split()[-1])
+        im = bg
+    else:
+        im = im.convert("RGB")
+    im = ImageOps.fit(im, (size, size), Image.LANCZOS)
+    buf = BytesIO()
+    im.save(buf, format="JPEG", quality=85)
+    return "data:image/jpeg;base64," + b64encode(buf.getvalue()).decode()
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _db_images() -> dict[str, str]:
+    try:
+        return get_drink_images()
+    except Exception:
+        return {}
+
+
+def refresh_images() -> None:
+    _db_images.clear()
+
+
 @st.cache_data(show_spinner=False)
-def drink_image_data(name: str) -> tuple[bytes, str] | None:
-    """Return (bytes, mime) resized to max 500px so big phone photos stay light."""
+def _file_image_data(name: str) -> tuple[bytes, str] | None:
     p = drink_image_path(name)
     if not p:
         return None
     try:
-        from io import BytesIO
-        from PIL import Image
-
-        im = Image.open(p)
-        im.thumbnail((500, 500))
+        im = ImageOps.exif_transpose(Image.open(p))
         buf = BytesIO()
         if p.suffix.lower() == ".png":
-            im.save(buf, format="PNG")
+            ImageOps.fit(im.convert("RGBA"), (IMG_SIZE, IMG_SIZE), Image.LANCZOS).save(buf, format="PNG")
             return buf.getvalue(), "image/png"
-        im.convert("RGB").save(buf, format="JPEG", quality=85)
+        ImageOps.fit(im.convert("RGB"), (IMG_SIZE, IMG_SIZE), Image.LANCZOS).save(buf, format="JPEG", quality=85)
         return buf.getvalue(), "image/jpeg"
     except Exception:
         return None
+
+
+def drink_image_source(name: str) -> str | None:
+    """'db' = uploaded in the app, 'file' = from images/ folder, None = no image."""
+    if name in _db_images():
+        return "db"
+    return "file" if drink_image_path(name) else None
+
+
+def drink_image_data(name: str) -> tuple[bytes, str] | None:
+    """Priority: image uploaded via the app (stored in Neo4j) > file in images/ > drawn icon."""
+    uri = _db_images().get(name)
+    if uri:
+        try:
+            head, b64 = uri.split(",", 1)
+            return b64decode(b64), head[5:].split(";")[0]
+        except Exception:
+            pass
+    return _file_image_data(name)
 
 
 def drink_image_uri(name: str) -> str:
@@ -359,32 +409,73 @@ elif page == "Manage Data (CRUD)":
 
     # ---- Drinks
     with tab_d:
-        with st.form("form_add_drink", clear_on_submit=True):
-            n = st.text_input("ชื่อเครื่องดื่มใหม่")
-            if st.form_submit_button("➕ เพิ่มเครื่องดื่ม", type="primary"):
-                if not n.strip():
-                    st.error("กรุณากรอกชื่อ")
-                elif create_drink(n.strip()):
-                    flash(f"เพิ่ม {n.strip()} แล้ว")
-                    st.rerun()
-                else:
-                    st.error("มีเครื่องดื่มนี้อยู่แล้ว")
+        with st.expander("➕ เพิ่มเครื่องดื่มใหม่"):
+            with st.form("form_add_drink", clear_on_submit=True):
+                n = st.text_input("ชื่อเครื่องดื่มใหม่")
+                up = st.file_uploader(
+                    "รูปเครื่องดื่ม (ไม่บังคับ) ระบบจะครอปเป็นสี่เหลี่ยมจัตุรัสให้เท่ากันอัตโนมัติ",
+                    type=["jpg", "jpeg", "png", "webp"],
+                )
+                if st.form_submit_button("➕ เพิ่มเครื่องดื่ม", type="primary"):
+                    if not n.strip():
+                        st.error("กรุณากรอกชื่อ")
+                    else:
+                        try:
+                            img = to_square_data_uri(up) if up else None
+                        except Exception:
+                            img = None
+                            st.error("อ่านไฟล์รูปไม่ได้ ลองไฟล์อื่น")
+                        else:
+                            if create_drink(n.strip(), img):
+                                refresh_images()
+                                flash(f"เพิ่ม {n.strip()} แล้ว")
+                                st.rerun()
+                            else:
+                                st.error("มีเครื่องดื่มนี้อยู่แล้ว")
+
         drinks = get_drinks()
         if drinks:
             sel = st.selectbox("เลือกเครื่องดื่มเพื่อแก้ไข / ลบ", drinks, key="crud_drink_sel")
-            with st.form(f"form_edit_drink_{sel}"):
-                new = st.text_input("ชื่อใหม่", sel)
-                if st.form_submit_button("💾 เปลี่ยนชื่อ", type="primary"):
-                    if not new.strip():
-                        st.error("ชื่อห้ามว่าง")
-                    elif rename_drink(sel, new.strip()):
-                        flash("เปลี่ยนชื่อแล้ว")
-                        st.rerun()
-                    else:
-                        st.error("มีเครื่องดื่มชื่อนี้อยู่แล้ว")
-            ok = st.checkbox("ยืนยันการลบ (LIKES/DISLIKES ที่เกี่ยวข้องจะถูกลบ)", key=f"del_drink_ok_{sel}")
+            src = drink_image_source(sel)
+            c_img, c_form = st.columns([1, 3])
+            with c_img:
+                d = drink_image_data(sel)
+                if d:
+                    st.image(d[0], use_container_width=True)
+                else:
+                    st.caption("ยังไม่มีรูป")
+                st.caption(
+                    {"db": "รูปที่อัปโหลดในระบบ", "file": "รูปจากโฟลเดอร์ images (อัปโหลดใหม่ทับได้)", None: "ไม่มีรูป"}[src]
+                )
+            with c_form:
+                with st.form(f"form_edit_drink_{sel}"):
+                    new = st.text_input("ชื่อใหม่", sel)
+                    up = st.file_uploader(
+                        "เพิ่ม / เปลี่ยนรูป", type=["jpg", "jpeg", "png", "webp"], key=f"up_drink_{sel}"
+                    )
+                    rm = st.checkbox("ลบรูปที่อัปโหลด", disabled=src != "db")
+                    if st.form_submit_button("💾 บันทึกการแก้ไข", type="primary"):
+                        target = new.strip()
+                        if not target:
+                            st.error("ชื่อห้ามว่าง")
+                        elif target != sel and not rename_drink(sel, target):
+                            st.error("มีเครื่องดื่มชื่อนี้อยู่แล้ว")
+                        else:
+                            try:
+                                if up:
+                                    set_drink_image(target, to_square_data_uri(up))
+                                elif rm:
+                                    clear_drink_image(target)
+                            except Exception:
+                                st.error("อ่านไฟล์รูปไม่ได้ ลองไฟล์อื่น (ชื่อถูกบันทึกแล้ว)")
+                            else:
+                                refresh_images()
+                                flash("บันทึกการแก้ไขแล้ว")
+                                st.rerun()
+            ok = st.checkbox("ยืนยันการลบ (LIKES/DISLIKES และรูปที่อัปโหลดจะถูกลบ)", key=f"del_drink_ok_{sel}")
             if st.button("🗑️ ลบเครื่องดื่ม", disabled=not ok, key=f"del_drink_{sel}"):
                 delete_drink(sel)
+                refresh_images()
                 flash(f"ลบ {sel} แล้ว")
                 st.rerun()
         else:

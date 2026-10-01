@@ -54,6 +54,24 @@ st.markdown(
 )
 
 
+DRINK_EMOJI = {
+    "Bubble Milk Tea": "🧋", "Cocoa": "🍫", "Green Tea": "🍵", "Lemon Tea": "🍋",
+    "Orange Juice": "🍊", "Americano": "☕", "Latte": "☕", "Cappuccino": "☕",
+    "มัทฉะLatte": "🍵", "Fresh Milk": "🥛",
+}
+_KEYWORDS = [("tea", "🍵"), ("ชา", "🍵"), ("coffee", "☕"), ("กาแฟ", "☕"), ("latte", "☕"),
+             ("juice", "🧃"), ("น้ำ", "🧃"), ("milk", "🥛"), ("นม", "🥛"), ("soda", "🥤")]
+
+
+def dlabel(name: str) -> str:
+    """Emoji + drink name (exact match first, then keyword, else generic cup)."""
+    emoji = DRINK_EMOJI.get(name)
+    if not emoji:
+        low = name.lower()
+        emoji = next((e for k, e in _KEYWORDS if k in low), "🥤")
+    return f"{emoji} {name}"
+
+
 def flash(msg: str) -> None:
     st.session_state["_flash"] = msg
 
@@ -66,7 +84,7 @@ def require_connection() -> None:
         st.error("ยังเชื่อมต่อ Neo4j Aura ไม่สำเร็จ")
         st.code(
             '[neo4j]\nuri = "neo4j+s://YOUR_INSTANCE.databases.neo4j.io"\n'
-            'username = "neo4j"\npassword = "YOUR_PASSWORD"\ndatabase = "neo4j"',
+            'username = "neo4j"\npassword = "YOUR_PASSWORD"\n# database = "..."  # ไม่ต้องใส่ก็ได้ (ใช้ database หลักของ instance)',
             language="toml",
         )
         st.caption("นำค่าด้านบนไปใส่ใน Streamlit Secrets และห้าม commit password ลง GitHub")
@@ -139,9 +157,9 @@ if page == "Dashboard":
     pref = get_preferences(user)
     l, r = st.columns(2)
     l.markdown(f"### ❤️ {user} ชอบ")
-    l.write(", ".join(pref["liked"]) or "ยังไม่มี")
+    l.write(", ".join(dlabel(x) for x in pref["liked"]) or "ยังไม่มี")
     r.markdown(f"### 😞 {user} ไม่ชอบ")
-    r.write(", ".join(pref["disliked"]) or "ยังไม่มี")
+    r.write(", ".join(dlabel(x) for x in pref["disliked"]) or "ยังไม่มี")
 
 # ============================================================ Recommendations
 elif page == "Recommendations":
@@ -160,7 +178,7 @@ elif page == "Recommendations":
             f"""
             <div class="drink-card">
               <span class="score-pill">#{i} · score {row['score']}</span>
-              <h3 style="margin:.55rem 0 .2rem 0">{escape(row['drink'])}</h3>
+              <h3 style="margin:.55rem 0 .2rem 0">{escape(dlabel(row['drink']))}</h3>
               <p><b>เหตุผล:</b> {explain_reason(row)}</p>
             </div>
             """,
@@ -174,7 +192,9 @@ elif page == "Drink Search":
     rows = get_drink_stats(kw)
     st.write(f"พบ {len(rows)} รายการ")
     if rows:
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        df = pd.DataFrame(rows)
+        df["drink"] = df["drink"].map(dlabel)
+        st.dataframe(df, use_container_width=True, hide_index=True)
 
 # ============================================================ Like / Dislike
 elif page == "Like / Dislike":
@@ -184,7 +204,7 @@ elif page == "Like / Dislike":
     if not drinks:
         st.info("ยังไม่มีเครื่องดื่ม")
         st.stop()
-    drink = st.selectbox("เครื่องดื่ม", drinks)
+    drink = st.selectbox("เครื่องดื่ม", drinks, format_func=dlabel)
     pref = get_preferences(user)
     status = "ชอบ" if drink in pref["liked"] else "ไม่ชอบ" if drink in pref["disliked"] else "ยังไม่ระบุ"
     st.caption(f"สถานะปัจจุบันของ {user} กับ {drink}: **{status}**")
@@ -300,8 +320,8 @@ elif page == "Manage Data (CRUD)":
         all_drinks = get_drinks()
         cur = get_preferences(user)
         with st.form(f"form_prefs_{user}"):
-            likes = st.multiselect("❤️ ชอบ", all_drinks, default=[x for x in cur["liked"] if x in all_drinks])
-            dislikes = st.multiselect("😞 ไม่ชอบ", all_drinks, default=[x for x in cur["disliked"] if x in all_drinks])
+            likes = st.multiselect("❤️ ชอบ", all_drinks, default=[x for x in cur["liked"] if x in all_drinks], format_func=dlabel)
+            dislikes = st.multiselect("😞 ไม่ชอบ", all_drinks, default=[x for x in cur["disliked"] if x in all_drinks], format_func=dlabel)
             if st.form_submit_button("💾 บันทึกความชอบ", type="primary"):
                 both = set(likes) & set(dislikes)
                 if both:

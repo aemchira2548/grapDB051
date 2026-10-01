@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from base64 import b64encode
 from html import escape
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
@@ -70,6 +72,29 @@ def dlabel(name: str) -> str:
         low = name.lower()
         emoji = next((e for k, e in _KEYWORDS if k in low), "🥤")
     return f"{emoji} {name}"
+
+
+_BASE = Path(__file__).parent
+
+
+def drink_image_path(name: str) -> Path | None:
+    """Prefer a real photo in images/photos/<Drink_Name>.jpg|png|webp, else the drawn icon in images/."""
+    stem = name.replace(" ", "_")
+    for folder, exts in (("images/photos", ("jpg", "jpeg", "png", "webp")), ("images", ("png",))):
+        for ext in exts:
+            p = _BASE / folder / f"{stem}.{ext}"
+            if p.exists():
+                return p
+    return None
+
+
+@st.cache_data(show_spinner=False)
+def drink_image_uri(name: str) -> str:
+    p = drink_image_path(name)
+    if not p:
+        return ""
+    mime = "jpeg" if p.suffix.lower() in (".jpg", ".jpeg") else p.suffix.lower().lstrip(".")
+    return f"data:image/{mime};base64," + b64encode(p.read_bytes()).decode()
 
 
 def flash(msg: str) -> None:
@@ -174,12 +199,18 @@ elif page == "Recommendations":
     if not rows:
         st.info("ยังไม่มีคำแนะนำสำหรับผู้ใช้นี้")
     for i, row in enumerate(rows, start=1):
+        uri = drink_image_uri(row["drink"])
+        img = (f'<img src="{uri}" style="width:96px;height:96px;object-fit:cover;border-radius:14px;flex:none">'
+               if uri else "")
         st.markdown(
             f"""
-            <div class="drink-card">
-              <span class="score-pill">#{i} · score {row['score']}</span>
-              <h3 style="margin:.55rem 0 .2rem 0">{escape(dlabel(row['drink']))}</h3>
-              <p><b>เหตุผล:</b> {explain_reason(row)}</p>
+            <div class="drink-card" style="display:flex;gap:1rem;align-items:center">
+              {img}
+              <div>
+                <span class="score-pill">#{i} · score {row['score']}</span>
+                <h3 style="margin:.55rem 0 .2rem 0">{escape(dlabel(row['drink']))}</h3>
+                <p style="margin:0"><b>เหตุผล:</b> {explain_reason(row)}</p>
+              </div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -192,9 +223,17 @@ elif page == "Drink Search":
     rows = get_drink_stats(kw)
     st.write(f"พบ {len(rows)} รายการ")
     if rows:
-        df = pd.DataFrame(rows)
-        df["drink"] = df["drink"].map(dlabel)
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        cols = st.columns(5)
+        for i, r in enumerate(rows):
+            p = drink_image_path(r["drink"])
+            with cols[i % 5]:
+                if p:
+                    st.image(str(p), use_container_width=True)
+                st.caption(f"**{dlabel(r['drink'])}**  \nชอบ {r['likes']} · ไม่ชอบ {r['dislikes']}")
+        with st.expander("ดูเป็นตาราง"):
+            df = pd.DataFrame(rows)
+            df["drink"] = df["drink"].map(dlabel)
+            st.dataframe(df, use_container_width=True, hide_index=True)
 
 # ============================================================ Like / Dislike
 elif page == "Like / Dislike":

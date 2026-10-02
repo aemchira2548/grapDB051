@@ -28,6 +28,13 @@ LIKES = [
     ("Fon", "Lemon Tea"), ("Fon", "Orange Juice"), ("Fon", "Fresh Milk"),
 ]
 
+# ความสัมพันธ์เพื่อน (FRIEND_OF) ตัวอย่าง: เก็บทิศเดียว แต่ query แบบไม่สนทิศ
+FRIENDS = [
+    ("Guy", "May"), ("Guy", "Nut"), ("May", "Min"), ("May", "Praew"), ("Nut", "Fah"),
+    ("Min", "Fah"), ("Ball", "Beam"), ("Ball", "Ton"), ("Beam", "Ton"), ("Praew", "Fon"), ("Fon", "Fah"),
+]
+FRIEND_WEIGHT = 2   # เพื่อนที่ชอบ 1 คน = +2 คะแนน
+
 DISLIKES = [
     ("Guy", "Americano"), ("May", "Lemon Tea"), ("Nut", "Cappuccino"),
     ("Min", "Americano"), ("Ball", "Bubble Milk Tea"), ("Fah", "Americano"),
@@ -102,6 +109,16 @@ def seed_demo_data() -> None:
         {"rows": [{"u": u, "d": d} for u, d in DISLIKES]},
         write=True,
     )
+    query(
+        """
+        UNWIND $rows AS r
+        MATCH (a:User {name:r.a}), (b:User {name:r.b})
+        WHERE a <> b AND NOT (a)-[:FRIEND_OF]-(b)
+        MERGE (a)-[:FRIEND_OF]->(b)
+        """,
+        {"rows": [{"a": a, "b": b} for a, b in FRIENDS]},
+        write=True,
+    )
 
 
 def reset_drink_data() -> None:
@@ -126,10 +143,11 @@ def get_dashboard_metrics() -> dict[str, int]:
         RETURN COUNT { (:User) } AS users,
                COUNT { (:Drink) } AS drinks,
                COUNT { ()-[:LIKES]->() } AS likes,
-               COUNT { ()-[:DISLIKES]->() } AS dislikes
+               COUNT { ()-[:DISLIKES]->() } AS dislikes,
+               COUNT { (:User)-[:FRIEND_OF]->(:User) } AS friendships
         """
     )
-    return rows[0] if rows else {"users": 0, "drinks": 0, "likes": 0, "dislikes": 0}
+    return rows[0] if rows else {"users": 0, "drinks": 0, "likes": 0, "dislikes": 0, "friendships": 0}
 
 
 def get_drink_stats(keyword: str = "") -> list[dict[str, Any]]:
@@ -161,8 +179,9 @@ def get_preferences(user: str) -> dict[str, list[str]]:
 
 
 def recommend_drinks(user: str, limit: int = 8) -> list[dict[str, Any]]:
-    """Collaborative filtering: drinks liked by people who share a liked drink with the user.
-    score = number of (shared drink, other user) paths - same as the original script.
+    """Hybrid, explainable score = taste + friends.
+    taste   = number of (shared liked drink -> other user -> new drink) paths (collaborative filtering)
+    friends = FRIEND_WEIGHT x number of the user's friends who like the drink
     Drinks the user already likes/dislikes are excluded."""
     return query(
         """
@@ -171,17 +190,22 @@ def recommend_drinks(user: str, limit: int = 8) -> list[dict[str, Any]]:
         WHERE NOT (u)-[:LIKES]->(d) AND NOT (u)-[:DISLIKES]->(d)
         OPTIONAL MATCH (u)-[:LIKES]->(sd:Drink)<-[:LIKES]-(o:User)-[:LIKES]->(d)
         WHERE o <> u
-        WITH d, count(o) AS score,
+        WITH u, d, count(o) AS taste,
              collect(DISTINCT o.name) AS similar_users,
              collect(DISTINCT sd.name) AS shared_drinks
+        OPTIONAL MATCH (u)-[:FRIEND_OF]-(f:User)-[:LIKES]->(d)
+        WITH d, taste, similar_users, shared_drinks,
+             count(DISTINCT f) AS friend_count, collect(DISTINCT f.name) AS friend_names
+        WITH d, taste, similar_users, shared_drinks, friend_count, friend_names,
+             taste + friend_count * $fw AS score
         WHERE score > 0
-        RETURN d.name AS drink, score, similar_users, shared_drinks,
+        RETURN d.name AS drink, score, taste, friend_count, friend_names, similar_users, shared_drinks,
                COUNT { (:User)-[:LIKES]->(d) } AS like_count,
                COUNT { (:User)-[:DISLIKES]->(d) } AS dislike_count
         ORDER BY score DESC, drink
         LIMIT $limit
         """,
-        {"name": user, "limit": int(limit)},
+        {"name": user, "limit": int(limit), "fw": FRIEND_WEIGHT},
     )
 
 
@@ -198,9 +222,48 @@ def graph_neighborhood(user: str) -> list[dict[str, Any]]:
         RETURN elementId(o) AS source_id, 'User' AS source_label, o.name AS source_name,
                type(r) AS relationship,
                elementId(d) AS target_id, 'Drink' AS target_label, d.name AS target_name
+        UNION
+        MATCH (u:User {name:$name})-[:FRIEND_OF]-(f:User)
+        RETURN elementId(u) AS source_id, 'User' AS source_label, u.name AS source_name,
+               'FRIEND_OF' AS relationship,
+               elementId(f) AS target_id, 'User' AS target_label, f.name AS target_name
+        UNION
+        MATCH (u:User {name:$name})-[:FRIEND_OF]-(f:User)-[r:LIKES]->(d:Drink)
+        RETURN elementId(f) AS source_id, 'User' AS source_label, f.name AS source_name,
+               type(r) AS relationship,
+               elementId(d) AS target_id, 'Drink' AS target_label, d.name AS target_name
         """,
         {"name": user},
     )
+
+
+def get_friends(user: str) -> list[str]:
+    rows = query(
+        "MATCH (:User {name:$n})-[:FRIEND_OF]-(f:User) RETURN DISTINCT f.name AS name ORDER BY name", {"n": user}
+    )
+    return [r["name"] for r in rows]
+
+
+def get_friend_pairs() -> list[dict[str, str]]:
+    return query(
+        "MATCH (a:User)-[:FRIEND_OF]->(b:User) RETURN a.name AS a, b.name AS b ORDER BY a, b"
+    )
+
+
+def set_friends(user: str, friends: list[str]) -> None:
+    """Replace all friendships of a user (treated as symmetric)."""
+    query("MATCH (:User {name:$n})-[r:FRIEND_OF]-(:User) DELETE r", {"n": user}, write=True)
+    if friends:
+        query(
+            """
+            MATCH (u:User {name:$n})
+            UNWIND $fs AS fname
+            MATCH (f:User {name:fname}) WHERE f <> u
+            MERGE (u)-[:FRIEND_OF]->(f)
+            """,
+            {"n": user, "fs": list(friends)},
+            write=True,
+        )
 
 
 # ---------------------------------------------------------------------------

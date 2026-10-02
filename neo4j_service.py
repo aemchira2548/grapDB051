@@ -203,7 +203,7 @@ def recommend_drinks(user: str, limit: int = 8) -> list[dict[str, Any]]:
 
 
 def graph_neighborhood(user: str) -> list[dict[str, Any]]:
-    """Edges around one user: LIKES / DISLIKES to drinks and FRIEND_OF to friends (compact ego graph)."""
+    """Edges around one user: own LIKES/DISLIKES, FRIEND_OF to friends, and what each friend likes/dislikes."""
     return query(
         """
         MATCH (u:User {name:$name})-[r:LIKES|DISLIKES]->(d:Drink)
@@ -211,9 +211,33 @@ def graph_neighborhood(user: str) -> list[dict[str, Any]]:
         UNION
         MATCH (u:User {name:$name})-[:FRIEND_OF]-(f:User)
         RETURN u.name AS source, 'FRIEND_OF' AS relationship, f.name AS target, 'User' AS target_label
+        UNION
+        MATCH (u:User {name:$name})-[:FRIEND_OF]-(f:User)-[r:LIKES|DISLIKES]->(d:Drink)
+        RETURN f.name AS source, type(r) AS relationship, d.name AS target, 'Drink' AS target_label
         """,
         {"name": user},
     )
+
+
+def get_friends_preferences(user: str) -> dict[str, dict[str, list[str]]]:
+    """{friend: {"liked": [...], "disliked": [...]}} for every friend of the user (one query)."""
+    rows = query(
+        """
+        MATCH (:User {name:$n})-[:FRIEND_OF]-(f:User)
+        OPTIONAL MATCH (f)-[r:LIKES|DISLIKES]->(d:Drink)
+        RETURN f.name AS friend, collect(CASE WHEN d IS NULL THEN null ELSE {drink: d.name, rel: type(r)} END) AS prefs
+        ORDER BY friend
+        """,
+        {"n": user},
+    )
+    out: dict[str, dict[str, list[str]]] = {}
+    for r in rows:
+        prefs = [p for p in r["prefs"] if p]
+        out[r["friend"]] = {
+            "liked": sorted(p["drink"] for p in prefs if p["rel"] == "LIKES"),
+            "disliked": sorted(p["drink"] for p in prefs if p["rel"] == "DISLIKES"),
+        }
+    return out
 
 
 def get_friends(user: str) -> list[str]:

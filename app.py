@@ -21,6 +21,7 @@ from neo4j_service import (
     get_drinks,
     get_friend_pairs,
     get_friends,
+    get_friends_preferences,
     get_preferences,
     get_users,
     graph_neighborhood,
@@ -440,56 +441,79 @@ def rec_item(i: int, row: dict) -> str:
     )
 
 
-def friend_graph_svg(user: str, likes: list, dislikes: list, friends: list) -> str:
-    """Compact ego graph (inline SVG): friends on the left, user in the middle, drink photo bubbles on the right.
-    Labels sit under the bubbles so the whole graph is narrow and stays readable on phones."""
-    drinks = [(d, True) for d in likes] + [(d, False) for d in dislikes]
-    W, rows = 380, max(len(drinks), len(friends), 2)
-    H = rows * 108 + 56
-    cx, cy, LX, RX = 190, H / 2, 56, 324
-    GREEN, RED, GOLD, INKC = "#2E8B47", "#C8322B", "#C98B2B", "#1B2A20"
-    lx0, lx1 = cx - 42, LX + 24
-    rx0, rx1 = cx + 42, RX - 33
-    lm, rm = (lx0 + lx1) / 2, (rx0 + rx1) / 2
+def friend_graph_svg(user: str, likes: list, dislikes: list, friends_prefs: dict) -> str:
+    """Compact graph (inline SVG). Left: the user (gold) and friends. Right: drink photo bubbles.
+    Every person is linked to the drinks they like (green) or dislike (red dashed); friendships are gold arcs on the left."""
+    GREEN, RED, GOLD, INKC, GREY = "#2E8B47", "#C8322B", "#C98B2B", "#1B2A20", "#AEBBA9"
+    rel = {d: "LIKES" for d in likes} | {d: "DISLIKES" for d in dislikes}
+    fnames = list(friends_prefs)
+    k = len(fnames) // 2
+    persons = fnames[:k] + [user] + fnames[k:]                      # user sits in the middle so arcs go up and down
+    others = sorted({d for p in friends_prefs.values() for d in p["liked"] + p["disliked"]} - set(rel))
+    drinks = list(likes) + list(dislikes) + others
+    W = 520
+    H = max(len(persons) * 92, max(len(drinks), 1) * 62, 220) + 52
+    PX, DX = 96, 352
 
     def ys(n):
-        step = (H - 56) / max(n, 1)
-        return [34 + step * (i + 0.5) for i in range(n)]
+        step = (H - 52) / max(n, 1)
+        return [44 + step * (i + 0.5) for i in range(n)]
 
-    edges, nodes = [], []
-    for y, name in zip(ys(len(friends)), friends):
-        edges.append(f'<path d="M {lx0} {cy} C {lm} {cy}, {lm} {y}, {lx1} {y}" fill="none" stroke="{GOLD}" stroke-width="3" stroke-linecap="round"/>')
-        color = AVATAR_COLORS[sum(map(ord, name)) % len(AVATAR_COLORS)]
-        nodes.append(
-            f'<circle cx="{LX}" cy="{y}" r="24" fill="{color}"/>'
-            f'<text x="{LX}" y="{y + 6}" text-anchor="middle" font-size="17" font-weight="600" fill="#fff">{escape(name[:1].upper())}</text>'
-            f'<text x="{LX}" y="{y + 42}" text-anchor="middle" font-size="12.5" fill="{INKC}">{escape(name)}</text>')
-    for k, (y, (name, liked)) in enumerate(zip(ys(len(drinks)), drinks)):
-        col = GREEN if liked else RED
-        dash = "" if liked else ' stroke-dasharray="7 6"'
-        edges.append(f'<path d="M {rx0} {cy} C {rm} {cy}, {rm} {y}, {rx1} {y}" fill="none" stroke="{col}" stroke-width="3"{dash} stroke-linecap="round"/>')
-        uri = drink_image_uri(name)
-        pic = (f'<clipPath id="dc{k}"><circle cx="{RX}" cy="{y}" r="28"/></clipPath>'
-               f'<image href="{uri}" x="{RX - 28}" y="{y - 28}" width="56" height="56" clip-path="url(#dc{k})" preserveAspectRatio="xMidYMid slice"/>'
-               if uri else f'<text x="{RX}" y="{y + 9}" text-anchor="middle" font-size="26">{emoji_of(name)}</text>')
-        nodes.append(
-            f'<circle cx="{RX}" cy="{y}" r="31" fill="#fff" stroke="{col}" stroke-width="3"/>{pic}'
-            f'<text x="{RX}" y="{y + 49}" text-anchor="middle" font-size="12.5" font-weight="600" fill="{INKC}">{escape(name)}</text>'
-            f'<text x="{RX}" y="{y + 63}" text-anchor="middle" font-size="11" fill="{col}">{"ชอบ" if liked else "ไม่ชอบ"}</text>')
-    if not friends:
-        nodes.append(f'<text x="{LX}" y="{cy + 5}" text-anchor="middle" font-size="12.5" fill="#8A968B">ยังไม่มีเพื่อน</text>')
+    py = dict(zip(persons, ys(len(persons))))
+    dy = dict(zip(drinks, ys(len(drinks))))
+    radius = lambda p: 28 if p == user else 22
+    edges, arcs, nodes = [], [], []
+
+    for f in fnames:                                                  # friendship arcs (left)
+        x0, x1 = PX - radius(user), PX - radius(f)
+        arcs.append(f'<path d="M {x0} {py[user]} C {PX - 78} {py[user]}, {PX - 78} {py[f]}, {x1} {py[f]}" fill="none" stroke="{GOLD}" stroke-width="3" stroke-linecap="round"/>')
+
+    def link(p, d, kind, mine):                                       # person -> drink
+        col = GREEN if kind == "LIKES" else RED
+        x0, x1, y0, y1 = PX + radius(p), DX - 29, py[p], dy[d]
+        mx = (x0 + x1) / 2
+        dash = "" if kind == "LIKES" else ' stroke-dasharray="6 5"'
+        w, op = (3, 1) if mine else (2.2, 0.8)
+        return (f'<path d="M {x0} {y0} C {mx} {y0}, {mx} {y1}, {x1} {y1}" fill="none" stroke="{col}" '
+                f'stroke-width="{w}" opacity="{op}"{dash} stroke-linecap="round"/>')
+
+    for f in fnames:
+        for d in friends_prefs[f]["liked"]:
+            edges.append(link(f, d, "LIKES", False))
+        for d in friends_prefs[f]["disliked"]:
+            edges.append(link(f, d, "DISLIKES", False))
+    for d in likes:
+        edges.append(link(user, d, "LIKES", True))
+    for d in dislikes:
+        edges.append(link(user, d, "DISLIKES", True))
+
+    for p in persons:                                                 # people
+        r, y = radius(p), py[p]
+        if p == user:
+            nodes.append(f'<circle cx="{PX}" cy="{y}" r="{r + 8}" fill="{GOLD}" opacity=".18"/><circle cx="{PX}" cy="{y}" r="{r}" fill="{GOLD}"/>')
+        else:
+            nodes.append(f'<circle cx="{PX}" cy="{y}" r="{r}" fill="{AVATAR_COLORS[sum(map(ord, p)) % len(AVATAR_COLORS)]}"/>')
+        nodes.append(f'<text x="{PX}" y="{y + r * 0.36}" text-anchor="middle" font-size="{r * 0.62:.0f}" font-weight="600" fill="#fff">{escape(p[:1].upper())}</text>'
+                     f'<text x="{PX}" y="{y + r + 17}" text-anchor="middle" font-size="14" font-weight="{600 if p == user else 400}" fill="{INKC}">{escape(p)}</text>')
+
+    for n, d in enumerate(drinks):                                    # drinks
+        y, kind = dy[d], rel.get(d)
+        col = GREEN if kind == "LIKES" else RED if kind == "DISLIKES" else GREY
+        uri = drink_image_uri(d)
+        pic = (f'<clipPath id="dc{n}"><circle cx="{DX}" cy="{y}" r="22"/></clipPath>'
+               f'<image href="{uri}" x="{DX - 22}" y="{y - 22}" width="44" height="44" clip-path="url(#dc{n})" preserveAspectRatio="xMidYMid slice"/>'
+               if uri else f'<text x="{DX}" y="{y + 8}" text-anchor="middle" font-size="22">{emoji_of(d)}</text>')
+        sub = (f'<text x="{DX + 36}" y="{y + 16}" font-size="11.5" fill="{col}">{"ชอบ" if kind == "LIKES" else "ไม่ชอบ"}</text>' if kind else "")
+        nodes.append(f'<circle cx="{DX}" cy="{y}" r="25" fill="#fff" stroke="{col}" stroke-width="3"/>{pic}'
+                     f'<text x="{DX + 36}" y="{y + (-1 if kind else 5)}" font-size="14" font-weight="600" fill="{INKC}">{escape(d)}</text>{sub}')
+
     if not drinks:
-        nodes.append(f'<text x="{RX}" y="{cy + 5}" text-anchor="middle" font-size="12.5" fill="#8A968B">ยังไม่ได้เลือก</text>')
-    center = (
-        f'<circle cx="{cx}" cy="{cy}" r="48" fill="{GOLD}" opacity=".18"/>'
-        f'<circle cx="{cx}" cy="{cy}" r="40" fill="{GOLD}"/>'
-        f'<text x="{cx}" y="{cy + 11}" text-anchor="middle" font-size="32" font-weight="600" fill="#fff">{escape(user[:1].upper())}</text>'
-        f'<text x="{cx}" y="{cy + 68}" text-anchor="middle" font-size="15" font-weight="600" fill="{INKC}">{escape(user)}</text>')
-    heads = (f'<text x="{LX}" y="16" text-anchor="middle" font-size="12" fill="#8A968B">เพื่อน</text>'
-             f'<text x="{RX}" y="16" text-anchor="middle" font-size="12" fill="#8A968B">เครื่องดื่ม</text>')
+        nodes.append(f'<text x="{DX}" y="{H / 2}" text-anchor="middle" font-size="13" fill="#8A968B">ยังไม่มีเครื่องดื่ม</text>')
+    heads = (f'<text x="{PX}" y="18" text-anchor="middle" font-size="12" fill="#8A968B">คุณและเพื่อน</text>'
+             f'<text x="{DX + 40}" y="18" text-anchor="middle" font-size="12" fill="#8A968B">เครื่องดื่ม</text>')
     return (f'<div style="background:#fff;border:1px solid var(--line);border-radius:24px;padding:.8rem .4rem;margin:.4rem 0 1rem">'
-            f'<svg viewBox="0 0 {W} {H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:520px;height:auto;display:block;margin:0 auto" '
-            f'font-family="\'IBM Plex Sans Thai\', Tahoma, sans-serif">{heads}{"".join(edges)}{center}{"".join(nodes)}</svg></div>')
+            f'<svg viewBox="0 0 {W} {H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:{W}px;height:auto;display:block;margin:0 auto" '
+            f'font-family="\'IBM Plex Sans Thai\', Tahoma, sans-serif">{heads}{"".join(arcs)}{"".join(edges)}{"".join(nodes)}</svg></div>')
 
 
 # ---------------------------------------------------------------------------
@@ -609,11 +633,10 @@ elif page == "Like / Dislike":
 
 # ============================================================ Graph Explorer
 elif page == "Graph Explorer":
-    sec("กราฟความสัมพันธ์", "เส้นเขียว = ชอบ  ·  เส้นแดงประ = ไม่ชอบ  ·  เส้นเหลือง = เป็นเพื่อนกัน")
+    sec("กราฟความสัมพันธ์", "เส้นเขียว = ชอบ  ·  เส้นแดงประ = ไม่ชอบ  ·  เส้นเหลือง = เป็นเพื่อนกัน  ·  ขอบรูปบอกความรู้สึกของผู้ใช้ที่เลือก")
     user = user_selector("graph_user", "เลือกผู้ใช้")
     pref = get_preferences(user)
-    friends = get_friends(user)
-    st.markdown(friend_graph_svg(user, pref["liked"], pref["disliked"], friends), unsafe_allow_html=True)
+    st.markdown(friend_graph_svg(user, pref["liked"], pref["disliked"], get_friends_preferences(user)), unsafe_allow_html=True)
     with st.expander("ดูข้อมูลความสัมพันธ์เป็นตาราง"):
         edges = graph_neighborhood(user)
         st.dataframe(pd.DataFrame(edges).rename(columns={"source": "จาก", "relationship": "ความสัมพันธ์", "target": "ถึง", "target_label": "ชนิด"}),

@@ -19,6 +19,8 @@ from neo4j_service import (
     get_drink_images,
     get_drink_stats,
     get_drinks,
+    get_friend_pairs,
+    get_friends,
     get_preferences,
     get_users,
     graph_neighborhood,
@@ -29,6 +31,7 @@ from neo4j_service import (
     reset_drink_data,
     seed_demo_data,
     set_drink_image,
+    set_friends,
     set_preference,
     set_preferences,
 )
@@ -45,6 +48,8 @@ st.markdown(
 .stApp{background:var(--paper);font-family:'IBM Plex Sans Thai',system-ui,sans-serif;color:var(--ink)}
 h1,h2,h3,h4,.mitr{font-family:'Mitr','IBM Plex Sans Thai',sans-serif !important;font-weight:500 !important;letter-spacing:0 !important}
 .block-container{padding-top:3.4rem;max-width:1120px}
+[data-testid="stElementContainer"],[data-testid="stMarkdownContainer"]{min-width:0;max-width:100%;width:100%}
+[data-testid="stMain"]{overflow-x:hidden}
 #MainMenu,footer{visibility:hidden}
 section[data-testid="stSidebar"]{background:linear-gradient(180deg,#1B3A27 0%,var(--deep) 45%,#0F2217 100%)}
 section[data-testid="stSidebar"] *{color:#E6EFE0}
@@ -91,6 +96,7 @@ div[data-baseweb="select"]>div,.stTextInput input{border-radius:14px}
               font-size:1.5rem;flex:none;transform:rotate(-6deg);box-shadow:0 3px 0 var(--caramel)}
 .topbar .t{font-family:'Mitr',sans-serif;font-size:1.4rem;line-height:1.05}
 .topbar .s{font-size:.75rem;color:var(--muted);margin-top:.1rem}
+.st-key-nav{overflow:hidden;max-width:100%;width:100%}
 .st-key-nav div[role="radiogroup"]{display:flex !important;flex-direction:row !important;flex-wrap:nowrap !important;gap:.45rem;
               overflow-x:auto;padding:.15rem .1rem .55rem;scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .st-key-nav div[role="radiogroup"]::-webkit-scrollbar{display:none}
@@ -186,6 +192,7 @@ button[kind="secondaryFormSubmit"],.stButton>button[kind="secondary"]{border-rad
 .chip.like{background:#E2F2E4;color:#1F5F31;border-color:#BFE0C5}
 .chip.dislike{background:#FBE4E1;color:#8E231D;border-color:#F2C2BD}
 .chip.user{background:#FBF0D6;color:#7A5212;border-color:#EBD59B}
+.chip.friend{background:#E6ECFA;color:#27408B;border-color:#C5D2F2}
 .chip.drink{background:#fff;color:#33463a;border-color:var(--line)}
 .avatar{display:inline-flex;align-items:center;justify-content:center;border-radius:50%;color:#fff;font-family:'Mitr',sans-serif;flex:none}
 .profile{display:flex;gap:1rem;align-items:center;margin-bottom:.8rem}
@@ -415,7 +422,7 @@ def hero(m: dict) -> str:
         '<h1>ดูว่าคนที่ชอบเหมือนคุณ<br>ดื่มอะไร</h1>'
         '<p>แล้วเลือกแก้วถัดไปอย่างมีเหตุผล</p>'
         f'<div class="facts"><span><b>{m.get("users", 0)}</b>ผู้ใช้</span><span><b>{m.get("drinks", 0)}</b>เครื่องดื่ม</span>'
-        f'<span><b>{m.get("likes", 0)}</b>ความชอบ</span></div></div>'
+        f'<span><b>{m.get("likes", 0)}</b>ความชอบ</span><span><b>{m.get("friendships", 0)}</b>คู่เพื่อน</span></div></div>'
         f'<div class="pols">{pols}</div></div>'
     )
 
@@ -431,6 +438,58 @@ def rec_item(i: int, row: dict) -> str:
         + (f' · ไม่ชอบ {row["dislike_count"]} คน' if row["dislike_count"] else "")
         + '</div></div></div>'
     )
+
+
+def friend_graph_svg(user: str, likes: list, dislikes: list, friends: list) -> str:
+    """Compact ego graph (inline SVG): friends on the left, user in the middle, drink photo bubbles on the right.
+    Labels sit under the bubbles so the whole graph is narrow and stays readable on phones."""
+    drinks = [(d, True) for d in likes] + [(d, False) for d in dislikes]
+    W, rows = 380, max(len(drinks), len(friends), 2)
+    H = rows * 108 + 56
+    cx, cy, LX, RX = 190, H / 2, 56, 324
+    GREEN, RED, GOLD, INKC = "#2E8B47", "#C8322B", "#C98B2B", "#1B2A20"
+    lx0, lx1 = cx - 42, LX + 24
+    rx0, rx1 = cx + 42, RX - 33
+    lm, rm = (lx0 + lx1) / 2, (rx0 + rx1) / 2
+
+    def ys(n):
+        step = (H - 56) / max(n, 1)
+        return [34 + step * (i + 0.5) for i in range(n)]
+
+    edges, nodes = [], []
+    for y, name in zip(ys(len(friends)), friends):
+        edges.append(f'<path d="M {lx0} {cy} C {lm} {cy}, {lm} {y}, {lx1} {y}" fill="none" stroke="{GOLD}" stroke-width="3" stroke-linecap="round"/>')
+        color = AVATAR_COLORS[sum(map(ord, name)) % len(AVATAR_COLORS)]
+        nodes.append(
+            f'<circle cx="{LX}" cy="{y}" r="24" fill="{color}"/>'
+            f'<text x="{LX}" y="{y + 6}" text-anchor="middle" font-size="17" font-weight="600" fill="#fff">{escape(name[:1].upper())}</text>'
+            f'<text x="{LX}" y="{y + 42}" text-anchor="middle" font-size="12.5" fill="{INKC}">{escape(name)}</text>')
+    for k, (y, (name, liked)) in enumerate(zip(ys(len(drinks)), drinks)):
+        col = GREEN if liked else RED
+        dash = "" if liked else ' stroke-dasharray="7 6"'
+        edges.append(f'<path d="M {rx0} {cy} C {rm} {cy}, {rm} {y}, {rx1} {y}" fill="none" stroke="{col}" stroke-width="3"{dash} stroke-linecap="round"/>')
+        uri = drink_image_uri(name)
+        pic = (f'<clipPath id="dc{k}"><circle cx="{RX}" cy="{y}" r="28"/></clipPath>'
+               f'<image href="{uri}" x="{RX - 28}" y="{y - 28}" width="56" height="56" clip-path="url(#dc{k})" preserveAspectRatio="xMidYMid slice"/>'
+               if uri else f'<text x="{RX}" y="{y + 9}" text-anchor="middle" font-size="26">{emoji_of(name)}</text>')
+        nodes.append(
+            f'<circle cx="{RX}" cy="{y}" r="31" fill="#fff" stroke="{col}" stroke-width="3"/>{pic}'
+            f'<text x="{RX}" y="{y + 49}" text-anchor="middle" font-size="12.5" font-weight="600" fill="{INKC}">{escape(name)}</text>'
+            f'<text x="{RX}" y="{y + 63}" text-anchor="middle" font-size="11" fill="{col}">{"ชอบ" if liked else "ไม่ชอบ"}</text>')
+    if not friends:
+        nodes.append(f'<text x="{LX}" y="{cy + 5}" text-anchor="middle" font-size="12.5" fill="#8A968B">ยังไม่มีเพื่อน</text>')
+    if not drinks:
+        nodes.append(f'<text x="{RX}" y="{cy + 5}" text-anchor="middle" font-size="12.5" fill="#8A968B">ยังไม่ได้เลือก</text>')
+    center = (
+        f'<circle cx="{cx}" cy="{cy}" r="48" fill="{GOLD}" opacity=".18"/>'
+        f'<circle cx="{cx}" cy="{cy}" r="40" fill="{GOLD}"/>'
+        f'<text x="{cx}" y="{cy + 11}" text-anchor="middle" font-size="32" font-weight="600" fill="#fff">{escape(user[:1].upper())}</text>'
+        f'<text x="{cx}" y="{cy + 68}" text-anchor="middle" font-size="15" font-weight="600" fill="{INKC}">{escape(user)}</text>')
+    heads = (f'<text x="{LX}" y="16" text-anchor="middle" font-size="12" fill="#8A968B">เพื่อน</text>'
+             f'<text x="{RX}" y="16" text-anchor="middle" font-size="12" fill="#8A968B">เครื่องดื่ม</text>')
+    return (f'<div style="background:#fff;border:1px solid var(--line);border-radius:24px;padding:.8rem .4rem;margin:.4rem 0 1rem">'
+            f'<svg viewBox="0 0 {W} {H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:520px;height:auto;display:block;margin:0 auto" '
+            f'font-family="\'IBM Plex Sans Thai\', Tahoma, sans-serif">{heads}{"".join(edges)}{center}{"".join(nodes)}</svg></div>')
 
 
 # ---------------------------------------------------------------------------
@@ -478,7 +537,8 @@ if page == "Dashboard":
         st.markdown(
             f'<div class="profile">{avatar(user, 64)}<h3>{escape(user)}</h3></div>'
             f'<div class="why"><span class="lab">ชอบ</span>{chips(pref["liked"], "like", True)}</div>'
-            f'<div class="why"><span class="lab">ไม่ชอบ</span>{chips(pref["disliked"], "dislike", True)}</div>',
+            f'<div class="why"><span class="lab">ไม่ชอบ</span>{chips(pref["disliked"], "dislike", True)}</div>'
+            f'<div class="why"><span class="lab">เพื่อน</span>{chips(get_friends(user), "friend")}</div>',
             unsafe_allow_html=True,
         )
 
@@ -498,7 +558,7 @@ elif page == "Recommendations":
     with st.expander("score คำนวณอย่างไร"):
         st.write(
             "score = จำนวนเส้นทางในกราฟ: เครื่องดื่มที่ผู้ใช้ชอบ → คนอื่นที่ชอบเหมือนกัน → เครื่องดื่มอื่นที่คนกลุ่มนั้นชอบ "
-            "(ตัดเครื่องดื่มที่ผู้ใช้ชอบหรือไม่ชอบอยู่แล้วออก) ยิ่งมีเส้นทางมากยิ่งแนะนำน้ำหนักมาก"
+            "(ตัดเครื่องดื่มที่ผู้ใช้ชอบหรือไม่ชอบอยู่แล้วออก) ยิ่งมีเส้นทางมากยิ่งแนะนำน้ำหนักมาก  ·  เพื่อน (FRIEND_OF) ใช้แสดงในโปรไฟล์และกราฟ ไม่ได้นำมาคิดคะแนน"
         )
 
 # ============================================================ Search
@@ -549,37 +609,20 @@ elif page == "Like / Dislike":
 
 # ============================================================ Graph Explorer
 elif page == "Graph Explorer":
-    sec("กราฟรอบตัวคุณ", "เส้นเขียว = LIKES  ·  เส้นแดงประ = DISLIKES  ·  รวมคนอื่นที่ชอบเครื่องดื่มเดียวกัน")
-    user = user_selector("graph_user")
-    rows = graph_neighborhood(user)
-    if not rows:
-        st.info("ยังไม่มีข้อมูลความสัมพันธ์")
-    else:
-        dot = ["digraph G {", 'rankdir="LR"; bgcolor="transparent";',
-               'node [shape=box, style="rounded,filled", fontname="Helvetica", color="#AEBBA9"];',
-               'edge [fontname="Helvetica", fontsize=10]; ranksep=0.7; nodesep=0.25;']
-        seen = set()
-        for r in rows:
-            for nid, label, name in [
-                (r["source_id"], r["source_label"], r["source_name"]),
-                (r["target_id"], r["target_label"], r["target_name"]),
-            ]:
-                if nid not in seen:
-                    safe = str(name).replace('"', "'")
-                    fill = "#E2F2E4" if label == "Drink" else "#FBF0D6"
-                    dot.append(f'"{nid}" [label="{safe}", fillcolor="{fill}"];')
-                    seen.add(nid)
-            style = 'color="#2E8B47"' if r["relationship"] == "LIKES" else 'color="#C8322B", style=dashed'
-            dot.append(f'"{r["source_id"]}" -> "{r["target_id"]}" [label="{r["relationship"]}", {style}];')
-        dot.append("}")
-        st.graphviz_chart("\n".join(dot), use_container_width=True)
-        with st.expander("ดูข้อมูล edge ที่ใช้วาดกราฟ"):
-            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    sec("กราฟความสัมพันธ์", "เส้นเขียว = ชอบ  ·  เส้นแดงประ = ไม่ชอบ  ·  เส้นเหลือง = เป็นเพื่อนกัน")
+    user = user_selector("graph_user", "เลือกผู้ใช้")
+    pref = get_preferences(user)
+    friends = get_friends(user)
+    st.markdown(friend_graph_svg(user, pref["liked"], pref["disliked"], friends), unsafe_allow_html=True)
+    with st.expander("ดูข้อมูลความสัมพันธ์เป็นตาราง"):
+        edges = graph_neighborhood(user)
+        st.dataframe(pd.DataFrame(edges).rename(columns={"source": "จาก", "relationship": "ความสัมพันธ์", "target": "ถึง", "target_label": "ชนิด"}),
+                     use_container_width=True, hide_index=True)
 
 # ============================================================ CRUD
 elif page == "Manage Data (CRUD)":
     sec("จัดการข้อมูล", "เพิ่ม แก้ไข ลบ ผู้ใช้ เครื่องดื่ม ความชอบ และรูป")
-    tab_u, tab_d, tab_p = st.tabs(["👤 ผู้ใช้", "🥤 เครื่องดื่ม", "❤️ ความชอบ"])
+    tab_u, tab_d, tab_p, tab_f = st.tabs(["👤 ผู้ใช้", "🥤 เครื่องดื่ม", "❤️ ความชอบ", "👥 เพื่อน"])
 
     # ---- Users
     with tab_u:
@@ -705,11 +748,30 @@ elif page == "Manage Data (CRUD)":
                     flash("อัปเดตความชอบแล้ว")
                     st.rerun()
 
+    # ---- Friends
+    with tab_f:
+        fuser = user_selector("crud_friend_user", "เลือกผู้ใช้")
+        others = [u for u in get_users() if u != fuser]
+        cur_friends = [x for x in get_friends(fuser) if x in others]
+        with st.form(f"form_friends_{fuser}"):
+            picked_friends = st.multiselect("เพื่อนของผู้ใช้นี้ (ความเป็นเพื่อนเป็นแบบสองทาง)", others, default=cur_friends)
+            if st.form_submit_button("💾 บันทึกเพื่อน", type="primary"):
+                set_friends(fuser, picked_friends)
+                flash("อัปเดตเพื่อนแล้ว")
+                st.rerun()
+        pairs = get_friend_pairs()
+        with st.expander(f"ความเป็นเพื่อนทั้งหมด ({len(pairs)} คู่)"):
+            if pairs:
+                st.dataframe(pd.DataFrame(pairs).rename(columns={"a": "ผู้ใช้ A", "b": "ผู้ใช้ B"}),
+                             use_container_width=True, hide_index=True)
+            else:
+                st.caption("ยังไม่มีความเป็นเพื่อน")
+
 # ============================================================ Admin
 elif page == "Admin / Setup":
     sec("ตั้งค่าระบบ", "สร้างข้อมูลตัวอย่าง และล้างข้อมูล")
     st.caption("โครงสร้างกราฟ (Graph schema)")
-    st.code("(:User {name})-[:LIKES]->(:Drink {name})\n(:User {name})-[:DISLIKES]->(:Drink {name})", language="text")
+    st.code("(:User {name})-[:LIKES]->(:Drink {name})\n(:User {name})-[:DISLIKES]->(:Drink {name})\n(:User {name})-[:FRIEND_OF]-(:User {name})", language="text")
     st.warning("ปุ่มสร้างข้อมูลใช้ MERGE จึงกดซ้ำได้ ไม่ลบข้อมูลเดิม")
     if st.button("สร้าง Constraint + Demo Data", type="primary", use_container_width=True):
         with st.spinner("กำลังสร้างข้อมูล..."):

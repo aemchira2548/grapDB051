@@ -28,12 +28,11 @@ LIKES = [
     ("Fon", "Lemon Tea"), ("Fon", "Orange Juice"), ("Fon", "Fresh Milk"),
 ]
 
-# ความสัมพันธ์เพื่อน (FRIEND_OF) ตัวอย่าง: เก็บทิศเดียว แต่ query แบบไม่สนทิศ
+# ความสัมพันธ์เพื่อน (FRIEND_OF) ตัวอย่าง: เก็บทิศเดียว แต่ query แบบไม่สนทิศ (ใช้แสดงผล ไม่ได้ถูกนำมาคิดคะแนนแนะนำ)
 FRIENDS = [
     ("Guy", "May"), ("Guy", "Nut"), ("May", "Min"), ("May", "Praew"), ("Nut", "Fah"),
     ("Min", "Fah"), ("Ball", "Beam"), ("Ball", "Ton"), ("Beam", "Ton"), ("Praew", "Fon"), ("Fon", "Fah"),
 ]
-FRIEND_WEIGHT = 2   # เพื่อนที่ชอบ 1 คน = +2 คะแนน
 
 DISLIKES = [
     ("Guy", "Americano"), ("May", "Lemon Tea"), ("Nut", "Cappuccino"),
@@ -179,9 +178,8 @@ def get_preferences(user: str) -> dict[str, list[str]]:
 
 
 def recommend_drinks(user: str, limit: int = 8) -> list[dict[str, Any]]:
-    """Hybrid, explainable score = taste + friends.
-    taste   = number of (shared liked drink -> other user -> new drink) paths (collaborative filtering)
-    friends = FRIEND_WEIGHT x number of the user's friends who like the drink
+    """Collaborative filtering: drinks liked by people who share a liked drink with the user.
+    score = number of (shared drink, other user) paths - same as the original script.
     Drinks the user already likes/dislikes are excluded."""
     return query(
         """
@@ -190,48 +188,29 @@ def recommend_drinks(user: str, limit: int = 8) -> list[dict[str, Any]]:
         WHERE NOT (u)-[:LIKES]->(d) AND NOT (u)-[:DISLIKES]->(d)
         OPTIONAL MATCH (u)-[:LIKES]->(sd:Drink)<-[:LIKES]-(o:User)-[:LIKES]->(d)
         WHERE o <> u
-        WITH u, d, count(o) AS taste,
+        WITH d, count(o) AS score,
              collect(DISTINCT o.name) AS similar_users,
              collect(DISTINCT sd.name) AS shared_drinks
-        OPTIONAL MATCH (u)-[:FRIEND_OF]-(f:User)-[:LIKES]->(d)
-        WITH d, taste, similar_users, shared_drinks,
-             count(DISTINCT f) AS friend_count, collect(DISTINCT f.name) AS friend_names
-        WITH d, taste, similar_users, shared_drinks, friend_count, friend_names,
-             taste + friend_count * $fw AS score
         WHERE score > 0
-        RETURN d.name AS drink, score, taste, friend_count, friend_names, similar_users, shared_drinks,
+        RETURN d.name AS drink, score, similar_users, shared_drinks,
                COUNT { (:User)-[:LIKES]->(d) } AS like_count,
                COUNT { (:User)-[:DISLIKES]->(d) } AS dislike_count
         ORDER BY score DESC, drink
         LIMIT $limit
         """,
-        {"name": user, "limit": int(limit), "fw": FRIEND_WEIGHT},
+        {"name": user, "limit": int(limit)},
     )
 
 
 def graph_neighborhood(user: str) -> list[dict[str, Any]]:
+    """Edges around one user: LIKES / DISLIKES to drinks and FRIEND_OF to friends (compact ego graph)."""
     return query(
         """
         MATCH (u:User {name:$name})-[r:LIKES|DISLIKES]->(d:Drink)
-        RETURN elementId(u) AS source_id, 'User' AS source_label, u.name AS source_name,
-               type(r) AS relationship,
-               elementId(d) AS target_id, 'Drink' AS target_label, d.name AS target_name
-        UNION
-        MATCH (u:User {name:$name})-[:LIKES]->(d:Drink)<-[r:LIKES]-(o:User)
-        WHERE o <> u
-        RETURN elementId(o) AS source_id, 'User' AS source_label, o.name AS source_name,
-               type(r) AS relationship,
-               elementId(d) AS target_id, 'Drink' AS target_label, d.name AS target_name
+        RETURN u.name AS source, type(r) AS relationship, d.name AS target, 'Drink' AS target_label
         UNION
         MATCH (u:User {name:$name})-[:FRIEND_OF]-(f:User)
-        RETURN elementId(u) AS source_id, 'User' AS source_label, u.name AS source_name,
-               'FRIEND_OF' AS relationship,
-               elementId(f) AS target_id, 'User' AS target_label, f.name AS target_name
-        UNION
-        MATCH (u:User {name:$name})-[:FRIEND_OF]-(f:User)-[r:LIKES]->(d:Drink)
-        RETURN elementId(f) AS source_id, 'User' AS source_label, f.name AS source_name,
-               type(r) AS relationship,
-               elementId(d) AS target_id, 'Drink' AS target_label, d.name AS target_name
+        RETURN u.name AS source, 'FRIEND_OF' AS relationship, f.name AS target, 'User' AS target_label
         """,
         {"name": user},
     )

@@ -34,7 +34,7 @@ from neo4j_service import (
 )
 
 
-st.set_page_config(page_title="DrinkGraph", page_icon="🍵", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="DrinkGraph", page_icon="🍵", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown(
     """
@@ -46,20 +46,105 @@ st.markdown(
 h1,h2,h3,h4,.mitr{font-family:'Mitr','IBM Plex Sans Thai',sans-serif !important;font-weight:500 !important;letter-spacing:0 !important}
 .block-container{padding-top:3.4rem;max-width:1120px}
 #MainMenu,footer{visibility:hidden}
-section[data-testid="stSidebar"]{background:var(--deep)}
+section[data-testid="stSidebar"]{background:linear-gradient(180deg,#1B3A27 0%,var(--deep) 45%,#0F2217 100%)}
 section[data-testid="stSidebar"] *{color:#E6EFE0}
-section[data-testid="stSidebar"] div[role="radiogroup"] label{padding:.35rem .6rem;border-radius:12px}
-section[data-testid="stSidebar"] div[role="radiogroup"] label:hover{background:rgba(255,255,255,.08)}
-.brand{font-family:'Mitr',sans-serif;font-size:1.5rem;line-height:1.1;margin:.2rem 0 .1rem}
-.brand-sub{font-size:.8rem;opacity:.7;margin-bottom:.8rem}
+section[data-testid="stSidebar"] [data-testid="stSidebarContent"]{padding-top:.5rem}
+.brand{display:flex;align-items:center;gap:.7rem;margin:1.2rem 0 1.4rem}
+.brand .logo{width:46px;height:46px;border-radius:15px;background:#F4F6F1;display:flex;align-items:center;justify-content:center;font-size:1.6rem;flex:none;
+             box-shadow:0 4px 0 rgba(0,0,0,.25);transform:rotate(-6deg)}
+.brand .t{font-family:'Mitr',sans-serif;font-size:1.45rem;line-height:1.05;color:#fff}
+.brand .s{font-size:.75rem;opacity:.65;margin-top:.15rem}
+.nav-label{font-size:.75rem;opacity:.55;margin:0 0 .35rem .5rem}
+section[data-testid="stSidebar"] div[role="radiogroup"]{gap:.15rem}
+section[data-testid="stSidebar"] .stRadio,
+section[data-testid="stSidebar"] [data-testid="stRadioGroup"],
+section[data-testid="stSidebar"] [data-testid="stElementContainer"]:has([data-testid="stRadioGroup"]),
+section[data-testid="stSidebar"] div[role="radiogroup"]>div{width:100% !important}
+section[data-testid="stSidebar"] label[data-testid="stRadioOption"],
+section[data-testid="stSidebar"] label[data-baseweb="radio"]{display:flex !important;width:100% !important;box-sizing:border-box;margin:0;
+             padding:.62rem 1rem;border-radius:16px;transition:background .15s;cursor:pointer}
+section[data-testid="stSidebar"] label[data-testid="stRadioOption"] > div > div:not([data-testid="stMarkdownContainer"]),
+section[data-testid="stSidebar"] label[data-baseweb="radio"] > div:first-child{display:none !important}
+section[data-testid="stSidebar"] label[data-testid="stRadioOption"] p,
+section[data-testid="stSidebar"] label[data-baseweb="radio"] p{font-size:.98rem}
+section[data-testid="stSidebar"] label[data-testid="stRadioOption"]:hover,
+section[data-testid="stSidebar"] label[data-baseweb="radio"]:hover{background:rgba(255,255,255,.08)}
+section[data-testid="stSidebar"] label[data-testid="stRadioOption"][data-selected="true"],
+section[data-testid="stSidebar"] label[data-baseweb="radio"]:has(input:checked){background:#F4F6F1;box-shadow:inset 5px 0 0 var(--caramel)}
+section[data-testid="stSidebar"] label[data-testid="stRadioOption"][data-selected="true"] *,
+section[data-testid="stSidebar"] label[data-baseweb="radio"]:has(input:checked) *{color:var(--deep) !important;font-weight:600}
+.side-foot{margin-top:2rem;padding-top:1rem;border-top:1px solid rgba(255,255,255,.12);font-size:.75rem;opacity:.6;line-height:1.6}
 .stButton>button{border-radius:999px;font-weight:600}
+.stButton>button[kind="primary"]{background-color:var(--leaf) !important;border-color:var(--leaf) !important;color:#fff !important}
+.stButton>button[kind="primary"]:hover{background-color:var(--deep) !important}
+.stTabs [aria-selected="true"]{color:var(--leaf) !important}
+.stTabs div[data-baseweb="tab-highlight"]{background-color:var(--leaf) !important}
+div[data-baseweb="slider"] div[role="slider"]{background-color:var(--leaf) !important}
 div[data-baseweb="select"]>div,.stTextInput input{border-radius:14px}
 .stTabs [data-baseweb="tab"]{font-family:'Mitr',sans-serif}
+
+
+/* ---------- top nav (แทน sidebar: ใช้ได้ดีบนมือถือ) ---------- */
+[data-testid="stSidebar"],[data-testid="stSidebarCollapsedControl"],[data-testid="stExpandSidebarButton"]{display:none !important}
+.topbar{display:flex;align-items:center;gap:.75rem;margin:.2rem 0 .8rem}
+.topbar .logo{width:44px;height:44px;border-radius:14px;background:var(--deep);display:flex;align-items:center;justify-content:center;
+              font-size:1.5rem;flex:none;transform:rotate(-6deg);box-shadow:0 3px 0 var(--caramel)}
+.topbar .t{font-family:'Mitr',sans-serif;font-size:1.4rem;line-height:1.05}
+.topbar .s{font-size:.75rem;color:var(--muted);margin-top:.1rem}
+.st-key-nav div[role="radiogroup"]{display:flex !important;flex-direction:row !important;flex-wrap:nowrap !important;gap:.45rem;
+              overflow-x:auto;padding:.15rem .1rem .55rem;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.st-key-nav div[role="radiogroup"]::-webkit-scrollbar{display:none}
+@media (min-width:900px){.st-key-nav div[role="radiogroup"]{flex-wrap:wrap !important;overflow:visible}.st-key-nav label[data-testid="stRadioOption"]{padding:.45rem .78rem}.st-key-nav div[role="radiogroup"]{gap:.3rem}.st-key-nav label[data-testid="stRadioOption"] p{font-size:.88rem}}
+.st-key-nav div[role="radiogroup"]>div{flex:none !important;width:auto !important}
+.st-key-nav label[data-testid="stRadioOption"]{display:flex !important;width:auto !important;padding:.5rem 1.05rem;border-radius:999px;
+              background:#fff;border:1px solid var(--line);cursor:pointer;white-space:nowrap;transition:background .15s}
+.st-key-nav label[data-testid="stRadioOption"] > div > div:not([data-testid="stMarkdownContainer"]){display:none !important}
+.st-key-nav label[data-testid="stRadioOption"] p{font-size:.92rem;margin:0}
+.st-key-nav label[data-testid="stRadioOption"]:hover{background:#E7ECE1}
+.st-key-nav label[data-testid="stRadioOption"][data-selected="true"]{background:var(--deep);border-color:var(--deep);box-shadow:0 3px 0 var(--caramel)}
+.st-key-nav label[data-testid="stRadioOption"][data-selected="true"] *{color:#fff !important;font-weight:600}
+
+.st-key-topn div[role="radiogroup"]{display:flex !important;flex-direction:row !important;flex-wrap:nowrap !important;gap:.45rem;
+              overflow-x:auto;padding:.15rem .1rem .55rem;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.st-key-topn div[role="radiogroup"]::-webkit-scrollbar{display:none}
+@media (min-width:900px){.st-key-topn div[role="radiogroup"]{flex-wrap:wrap !important;overflow:visible}.st-key-topn label[data-testid="stRadioOption"]{padding:.45rem .78rem}.st-key-topn div[role="radiogroup"]{gap:.3rem}.st-key-topn label[data-testid="stRadioOption"] p{font-size:.88rem}}
+.st-key-topn div[role="radiogroup"]>div{flex:none !important;width:auto !important}
+.st-key-topn label[data-testid="stRadioOption"]{display:flex !important;width:auto !important;padding:.5rem 1.05rem;border-radius:999px;
+              background:#fff;border:1px solid var(--line);cursor:pointer;white-space:nowrap;transition:background .15s}
+.st-key-topn label[data-testid="stRadioOption"] > div > div:not([data-testid="stMarkdownContainer"]){display:none !important}
+.st-key-topn label[data-testid="stRadioOption"] p{font-size:.92rem;margin:0}
+.st-key-topn label[data-testid="stRadioOption"]:hover{background:#E7ECE1}
+.st-key-topn label[data-testid="stRadioOption"][data-selected="true"]{background:var(--deep);border-color:var(--deep);box-shadow:0 3px 0 var(--caramel)}
+.st-key-topn label[data-testid="stRadioOption"][data-selected="true"] *{color:#fff !important;font-weight:600}
+
+.st-key-pref_choice div[role="radiogroup"]{display:flex !important;flex-direction:row !important;flex-wrap:nowrap !important;gap:.45rem;
+              overflow-x:auto;padding:.15rem .1rem .55rem;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.st-key-pref_choice div[role="radiogroup"]::-webkit-scrollbar{display:none}
+@media (min-width:900px){.st-key-pref_choice div[role="radiogroup"]{flex-wrap:wrap !important;overflow:visible}.st-key-pref_choice label[data-testid="stRadioOption"]{padding:.45rem .78rem}.st-key-pref_choice div[role="radiogroup"]{gap:.3rem}.st-key-pref_choice label[data-testid="stRadioOption"] p{font-size:.88rem}}
+.st-key-pref_choice div[role="radiogroup"]>div{flex:none !important;width:auto !important}
+.st-key-pref_choice label[data-testid="stRadioOption"]{display:flex !important;width:auto !important;padding:.5rem 1.05rem;border-radius:999px;
+              background:#fff;border:1px solid var(--line);cursor:pointer;white-space:nowrap;transition:background .15s}
+.st-key-pref_choice label[data-testid="stRadioOption"] > div > div:not([data-testid="stMarkdownContainer"]){display:none !important}
+.st-key-pref_choice label[data-testid="stRadioOption"] p{font-size:.92rem;margin:0}
+.st-key-pref_choice label[data-testid="stRadioOption"]:hover{background:#E7ECE1}
+.st-key-pref_choice label[data-testid="stRadioOption"][data-selected="true"]{background:var(--deep);border-color:var(--deep);box-shadow:0 3px 0 var(--caramel)}
+.st-key-pref_choice label[data-testid="stRadioOption"][data-selected="true"] *{color:#fff !important;font-weight:600}
+
+
+/* ---------- form polish ---------- */
+[data-testid="stForm"]{background:#fff;border:1px solid var(--line);border-radius:22px;padding:1.2rem 1.3rem}
+[data-testid="stExpander"] details{background:#fff;border:1px solid var(--line) !important;border-radius:18px}
+div[data-baseweb="input"]>div,div[data-baseweb="select"]>div,.stTextInput input{background:#fff !important;border:1px solid var(--line) !important;border-radius:14px}
+div[data-testid="stAlert"]{border-radius:16px;border:0}
+button[kind="primaryFormSubmit"]{background-color:var(--leaf) !important;border-color:var(--leaf) !important;color:#fff !important;border-radius:999px;font-weight:600}
+button[kind="primaryFormSubmit"]:hover{background-color:var(--deep) !important}
+button[kind="secondaryFormSubmit"],.stButton>button[kind="secondary"]{border-radius:999px;background:#fff;border:1px solid var(--line);color:var(--ink)}
+.st-key-topn label[data-testid="stRadioOption"],.st-key-pref_choice label[data-testid="stRadioOption"]{padding:.4rem .95rem}
 
 /* ---------- hero ---------- */
 .hero{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:1rem;background:var(--deep);color:#F1F6EC;
       border-radius:28px;padding:1.6rem 2rem 1.6rem 2.2rem;margin-bottom:1.6rem;overflow:hidden}
-.hero h1{font-size:2.6rem;margin:0;color:#fff;line-height:1}
+.hero h1{font-size:2.2rem;margin:0;color:#fff;line-height:1.25}
 .hero p{margin:.6rem 0 0;max-width:30ch;opacity:.85;line-height:1.5}
 .hero .facts{margin-top:1rem;display:flex;gap:1.2rem;font-size:.85rem;opacity:.8;flex-wrap:wrap}
 .hero .facts b{font-family:'Mitr',sans-serif;font-weight:500;font-size:1.15rem;color:#F4D58D;margin-right:.25rem}
@@ -115,7 +200,7 @@ div[data-baseweb="select"]>div,.stTextInput input{border-radius:14px}
 .big img,.big .ph{width:100%;max-width:300px;aspect-ratio:1/1;object-fit:cover;border-radius:28px;display:block}
 
 @media (max-width:720px){
-  .hero{padding:1.2rem}.hero h1{font-size:2rem}.pol img,.pol .ph{width:80px;height:80px}
+  .hero{padding:1.2rem}.hero h1{font-size:1.7rem}.pol{padding:5px 5px 18px;margin-left:-22px}.pol img,.pol .ph{width:72px;height:72px}.pol span{font-size:.55rem;bottom:3px}
   .ritem>img,.ritem>.ph{width:92px;height:92px}.rank{display:none}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none !important;transition:none !important}}
@@ -327,8 +412,8 @@ def hero(m: dict) -> str:
     )
     return (
         '<div class="hero"><div>'
-        '<h1>DrinkGraph</h1>'
-        '<p>ดูว่าคนที่ชอบเหมือนคุณดื่มอะไร แล้วเลือกแก้วถัดไปอย่างมีเหตุผล</p>'
+        '<h1>ดูว่าคนที่ชอบเหมือนคุณ<br>ดื่มอะไร</h1>'
+        '<p>แล้วเลือกแก้วถัดไปอย่างมีเหตุผล</p>'
         f'<div class="facts"><span><b>{m.get("users", 0)}</b>ผู้ใช้</span><span><b>{m.get("drinks", 0)}</b>เครื่องดื่ม</span>'
         f'<span><b>{m.get("likes", 0)}</b>ความชอบ</span></div></div>'
         f'<div class="pols">{pols}</div></div>'
@@ -355,20 +440,20 @@ require_connection()
 
 PAGES = {
     "Dashboard": "📊 ภาพรวม",
-    "Recommendations": "✨ แนะนำเครื่องดื่ม",
+    "Recommendations": "✨ แนะนำ",
     "Drink Search": "🔎 ค้นหา",
-    "Like / Dislike": "❤️ บันทึกความชอบ",
-    "Graph Explorer": "🕸️ กราฟความสัมพันธ์",
+    "Like / Dislike": "❤️ ความชอบ",
+    "Graph Explorer": "🕸️ กราฟ",
     "Manage Data (CRUD)": "🛠️ จัดการข้อมูล",
-    "Admin / Setup": "⚙️ ตั้งค่าระบบ",
+    "Admin / Setup": "⚙️ ตั้งค่า",
 }
 
-with st.sidebar:
-    st.markdown('<div class="brand">DrinkGraph</div><div class="brand-sub">Neo4j Aura + Streamlit</div>', unsafe_allow_html=True)
-    page = st.radio("เมนู", list(PAGES), format_func=PAGES.get, label_visibility="collapsed")
+st.markdown('<div class="topbar"><div class="logo">🍵</div><div><div class="t">DrinkGraph</div>'
+            '<div class="s">ระบบแนะนำเครื่องดื่มจากกราฟความชอบ</div></div></div>', unsafe_allow_html=True)
+page = st.radio("เมนู", list(PAGES), format_func=PAGES.get, horizontal=True, label_visibility="collapsed", key="nav")
 
-metrics = get_dashboard_metrics()
-st.markdown(hero(metrics), unsafe_allow_html=True)
+if page == "Dashboard":
+    st.markdown(hero(get_dashboard_metrics()), unsafe_allow_html=True)
 
 if "_flash" in st.session_state:
     st.success(st.session_state.pop("_flash"))
@@ -404,7 +489,7 @@ elif page == "Recommendations":
     with c1:
         user = user_selector("rec_user", "แนะนำให้")
     with c2:
-        top_n = st.slider("จำนวนคำแนะนำ", 3, 10, 5)
+        top_n = st.radio("จำนวนคำแนะนำ", [3, 5, 8], index=1, horizontal=True, key="topn")
     rows = recommend_drinks(user, top_n)
     if not rows:
         st.info("ยังไม่มีคำแนะนำสำหรับผู้ใช้นี้ ลองเพิ่มความชอบในเมนู บันทึกความชอบ")
@@ -455,7 +540,7 @@ elif page == "Like / Dislike":
     with pb:
         st.markdown(f'<h3 style="margin:.2rem 0">{escape(dlabel(drink))}</h3><div class="sub">สถานะของ {escape(user)}: {status}</div>',
                     unsafe_allow_html=True)
-        choice = st.radio("ความรู้สึก", ["❤️ ชอบ", "😞 ไม่ชอบ", "ล้างความรู้สึก"])
+        choice = st.radio("ความรู้สึก", ["❤️ ชอบ", "😞 ไม่ชอบ", "ล้างความรู้สึก"], horizontal=True, key="pref_choice")
         if st.button("บันทึก", type="primary"):
             kind = {"❤️ ชอบ": "LIKES", "😞 ไม่ชอบ": "DISLIKES"}.get(choice)
             set_preference(user, drink, kind)
@@ -472,7 +557,7 @@ elif page == "Graph Explorer":
     else:
         dot = ["digraph G {", 'rankdir="LR"; bgcolor="transparent";',
                'node [shape=box, style="rounded,filled", fontname="Helvetica", color="#AEBBA9"];',
-               'edge [fontname="Helvetica", fontsize=10];']
+               'edge [fontname="Helvetica", fontsize=10]; ranksep=0.7; nodesep=0.25;']
         seen = set()
         for r in rows:
             for nid, label, name in [
@@ -482,7 +567,7 @@ elif page == "Graph Explorer":
                 if nid not in seen:
                     safe = str(name).replace('"', "'")
                     fill = "#E2F2E4" if label == "Drink" else "#FBF0D6"
-                    dot.append(f'"{nid}" [label="{safe}\\n:{label}", fillcolor="{fill}"];')
+                    dot.append(f'"{nid}" [label="{safe}", fillcolor="{fill}"];')
                     seen.add(nid)
             style = 'color="#2E8B47"' if r["relationship"] == "LIKES" else 'color="#C8322B", style=dashed'
             dot.append(f'"{r["source_id"]}" -> "{r["target_id"]}" [label="{r["relationship"]}", {style}];')
@@ -493,7 +578,7 @@ elif page == "Graph Explorer":
 
 # ============================================================ CRUD
 elif page == "Manage Data (CRUD)":
-    st.subheader("🛠️ จัดการข้อมูล (เพิ่ม / แก้ไข / ลบ)")
+    sec("จัดการข้อมูล", "เพิ่ม แก้ไข ลบ ผู้ใช้ เครื่องดื่ม ความชอบ และรูป")
     tab_u, tab_d, tab_p = st.tabs(["👤 ผู้ใช้", "🥤 เครื่องดื่ม", "❤️ ความชอบ"])
 
     # ---- Users
@@ -622,14 +707,9 @@ elif page == "Manage Data (CRUD)":
 
 # ============================================================ Admin
 elif page == "Admin / Setup":
-    st.subheader("⚙️ Setup ข้อมูลตัวอย่าง")
-    st.markdown(
-        """
-        **Graph schema**
-        - `(:User {name})-[:LIKES]->(:Drink {name})`
-        - `(:User {name})-[:DISLIKES]->(:Drink {name})`
-        """
-    )
+    sec("ตั้งค่าระบบ", "สร้างข้อมูลตัวอย่าง และล้างข้อมูล")
+    st.caption("โครงสร้างกราฟ (Graph schema)")
+    st.code("(:User {name})-[:LIKES]->(:Drink {name})\n(:User {name})-[:DISLIKES]->(:Drink {name})", language="text")
     st.warning("ปุ่มสร้างข้อมูลใช้ MERGE จึงกดซ้ำได้ ไม่ลบข้อมูลเดิม")
     if st.button("สร้าง Constraint + Demo Data", type="primary", use_container_width=True):
         with st.spinner("กำลังสร้างข้อมูล..."):

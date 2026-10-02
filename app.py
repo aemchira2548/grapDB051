@@ -33,33 +33,96 @@ from neo4j_service import (
     set_preferences,
 )
 
-st.set_page_config(page_title="DrinkGraph Recommender", page_icon="🍵", layout="wide", initial_sidebar_state="expanded")
+
+st.set_page_config(page_title="DrinkGraph", page_icon="🍵", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown(
     """
-    <style>
-      .block-container {padding-top: 1.3rem; padding-bottom: 2rem;}
-      .hero {
-        padding: 1.4rem 1.6rem; border-radius: 22px;
-        background: linear-gradient(120deg, #14532d 0%, #166534 50%, #a16207 100%);
-        color: white; margin-bottom: 1rem;
-      }
-      .hero h1 {margin:0; font-size:2.15rem;}
-      .hero p {opacity:.88; margin:.35rem 0 0 0;}
-      .drink-card {
-        padding: 1rem 1.1rem; border: 1px solid rgba(128,128,128,.25);
-        border-radius: 16px; margin-bottom: .75rem;
-      }
-      .score-pill {
-        display:inline-block; padding:.2rem .55rem; border-radius:999px;
-        background:#166534; color:white; font-size:.8rem; font-weight:700;
-      }
-      .muted {opacity:.72; font-size:.9rem;}
-    </style>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600&family=Mitr:wght@400;500;600&display=swap');
+:root{--deep:#17301F;--leaf:#2F5D3A;--pearl:#2B1B14;--caramel:#C98B2B;--paper:#F4F6F1;--line:#D5DCCF;
+      --like:#2E8B47;--dislike:#C8322B;--muted:#5E6B5F;--ink:#1B2A20;}
+.stApp{background:var(--paper);font-family:'IBM Plex Sans Thai',system-ui,sans-serif;color:var(--ink)}
+h1,h2,h3,h4,.mitr{font-family:'Mitr','IBM Plex Sans Thai',sans-serif !important;font-weight:500 !important;letter-spacing:0 !important}
+.block-container{padding-top:3.4rem;max-width:1120px}
+#MainMenu,footer{visibility:hidden}
+section[data-testid="stSidebar"]{background:var(--deep)}
+section[data-testid="stSidebar"] *{color:#E6EFE0}
+section[data-testid="stSidebar"] div[role="radiogroup"] label{padding:.35rem .6rem;border-radius:12px}
+section[data-testid="stSidebar"] div[role="radiogroup"] label:hover{background:rgba(255,255,255,.08)}
+.brand{font-family:'Mitr',sans-serif;font-size:1.5rem;line-height:1.1;margin:.2rem 0 .1rem}
+.brand-sub{font-size:.8rem;opacity:.7;margin-bottom:.8rem}
+.stButton>button{border-radius:999px;font-weight:600}
+div[data-baseweb="select"]>div,.stTextInput input{border-radius:14px}
+.stTabs [data-baseweb="tab"]{font-family:'Mitr',sans-serif}
+
+/* ---------- hero ---------- */
+.hero{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:1rem;background:var(--deep);color:#F1F6EC;
+      border-radius:28px;padding:1.6rem 2rem 1.6rem 2.2rem;margin-bottom:1.6rem;overflow:hidden}
+.hero h1{font-size:2.6rem;margin:0;color:#fff;line-height:1}
+.hero p{margin:.6rem 0 0;max-width:30ch;opacity:.85;line-height:1.5}
+.hero .facts{margin-top:1rem;display:flex;gap:1.2rem;font-size:.85rem;opacity:.8;flex-wrap:wrap}
+.hero .facts b{font-family:'Mitr',sans-serif;font-weight:500;font-size:1.15rem;color:#F4D58D;margin-right:.25rem}
+.pols{display:flex;padding:.4rem .6rem .2rem 0}
+.pol{background:#fff;padding:7px 7px 24px;border-radius:6px;box-shadow:0 8px 20px rgba(0,0,0,.35);margin-left:-26px;position:relative}
+.pol:first-child{margin-left:0}
+.pol img,.pol .ph{width:112px;height:112px;object-fit:cover;display:block;border-radius:3px}
+.pol span{position:absolute;left:0;right:0;bottom:5px;text-align:center;font-size:.68rem;color:#444}
+
+/* ---------- section titles & menu rows ---------- */
+.sec{font-size:1.5rem;margin:.4rem 0 .9rem;padding-top:.7rem;border-top:3px solid var(--ink)}
+.sub{color:var(--muted);font-size:.9rem;margin:-.5rem 0 1rem}
+.mrow{display:flex;align-items:center;gap:.8rem;padding:.45rem 0}
+.mrow img,.mrow .ph{width:48px;height:48px;border-radius:14px;object-fit:cover;flex:none}
+.mrow .nm{font-weight:600}
+.dots{flex:1;border-bottom:2px dotted #AEBBA9;min-width:20px;transform:translateY(5px)}
+.val{display:flex;align-items:center;gap:.35rem;font-size:.85rem;color:var(--muted)}
+.val b{font-weight:600;min-width:.9rem}
+.pearls{display:inline-flex;gap:3px;flex-wrap:wrap;max-width:110px;justify-content:flex-end}
+.pearls i{display:block;width:10px;height:10px;border-radius:50%}
+.pearls.like i{background:var(--pearl)}
+.pearls.dislike i{background:var(--dislike);opacity:.85}
+.pearls.score i{background:var(--leaf)}
+.like-n{color:var(--like)}.dislike-n{color:var(--dislike)}
+
+/* ---------- recommendation list ---------- */
+.ritem{display:flex;gap:1.2rem;align-items:center;padding:1.1rem 0;border-bottom:1px solid var(--line)}
+.rank{font-family:'Mitr',sans-serif;font-size:2.4rem;color:#B5C2AF;width:2.2rem;text-align:center;flex:none}
+.ritem>img,.ritem>.ph{width:140px;height:140px;border-radius:24px;object-fit:cover;flex:none}
+.rbody{flex:1;min-width:0}
+.rtitle{display:flex;align-items:baseline;gap:.6rem}
+.rtitle .nm{font-family:'Mitr',sans-serif;font-size:1.45rem}
+.rtitle .sc{display:flex;align-items:center;gap:.4rem;font-family:'Mitr',sans-serif;color:var(--leaf)}
+.why{font-size:.86rem;color:var(--muted);margin-top:.35rem;line-height:1.7}
+.why .lab{color:var(--ink);font-weight:600;margin-right:.3rem}
+
+/* ---------- chips / avatar ---------- */
+.chip{display:inline-block;padding:.1rem .6rem;border-radius:999px;font-size:.8rem;margin:.1rem .25rem .1rem 0;border:1px solid transparent}
+.chip.like{background:#E2F2E4;color:#1F5F31;border-color:#BFE0C5}
+.chip.dislike{background:#FBE4E1;color:#8E231D;border-color:#F2C2BD}
+.chip.user{background:#FBF0D6;color:#7A5212;border-color:#EBD59B}
+.chip.drink{background:#fff;color:#33463a;border-color:var(--line)}
+.avatar{display:inline-flex;align-items:center;justify-content:center;border-radius:50%;color:#fff;font-family:'Mitr',sans-serif;flex:none}
+.profile{display:flex;gap:1rem;align-items:center;margin-bottom:.8rem}
+.profile h3{margin:0;font-size:1.6rem}
+
+/* ---------- drink tiles ---------- */
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:1.4rem 1.1rem}
+.tile img,.tile .ph{width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:20px;display:block}
+.tile .nm{font-family:'Mitr',sans-serif;margin-top:.5rem;font-size:1rem}
+.tile .pearls{max-width:none;justify-content:flex-start;margin-top:.15rem}
+.ph{display:flex;align-items:center;justify-content:center;background:#E4EBDD;font-size:2.4rem}
+.big img,.big .ph{width:100%;max-width:300px;aspect-ratio:1/1;object-fit:cover;border-radius:28px;display:block}
+
+@media (max-width:720px){
+  .hero{padding:1.2rem}.hero h1{font-size:2rem}.pol img,.pol .ph{width:80px;height:80px}
+  .ritem>img,.ritem>.ph{width:92px;height:92px}.rank{display:none}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none !important;transition:none !important}}
+</style>
     """,
     unsafe_allow_html=True,
 )
-
 
 DRINK_EMOJI = {
     "Bubble Milk Tea": "🧋", "Cocoa": "🍫", "Green Tea": "🍵", "Lemon Tea": "🍋",
@@ -184,6 +247,47 @@ def drink_image_uri(name: str) -> str:
     return f"data:{d[1]};base64," + b64encode(d[0]).decode() if d else ""
 
 
+
+
+# ---------------------------------------------------------------------------
+# UI helpers
+# ---------------------------------------------------------------------------
+AVATAR_COLORS = ["#2F5D3A", "#C98B2B", "#2B6C8F", "#7A4E8C", "#B4443A", "#3E7C74", "#8A6D1E", "#4A5BA8"]
+
+
+def emoji_of(name: str) -> str:
+    return dlabel(name).split(" ", 1)[0]
+
+
+def thumb(name: str) -> str:
+    uri = drink_image_uri(name)
+    if uri:
+        return f'<img src="{uri}" alt="{escape(name)}">'
+    return f'<div class="ph">{emoji_of(name)}</div>'
+
+
+def avatar(name: str, size: int = 44) -> str:
+    color = AVATAR_COLORS[sum(map(ord, name)) % len(AVATAR_COLORS)]
+    return (f'<span class="avatar" style="width:{size}px;height:{size}px;background:{color};'
+            f'font-size:{int(size * 0.45)}px">{escape(name[:1].upper())}</span>')
+
+
+def chips(items, kind: str = "drink", with_emoji: bool = False) -> str:
+    return "".join(
+        f'<span class="chip {kind}">{escape(dlabel(x) if with_emoji else x)}</span>' for x in items
+    ) or '<span class="chip drink">-</span>'
+
+
+def pearls(n: int, kind: str) -> str:
+    n = int(n)
+    return f'<span class="pearls {kind}">' + "<i></i>" * min(n, 12) + "</span>"
+
+
+def sec(title: str, sub: str = "") -> None:
+    st.markdown(f'<div class="sec">{escape(title)}</div>' + (f'<div class="sub">{escape(sub)}</div>' if sub else ""),
+                unsafe_allow_html=True)
+
+
 def flash(msg: str) -> None:
     st.session_state["_flash"] = msg
 
@@ -204,119 +308,128 @@ def require_connection() -> None:
         st.stop()
 
 
-def user_selector(key: str) -> str:
+def user_selector(key: str, label: str = "เลือกผู้ใช้") -> str:
     users = get_users()
     if not users:
         st.info("ยังไม่มีผู้ใช้ กรุณาไปหน้า Admin / Setup แล้วสร้างข้อมูลตัวอย่าง หรือเพิ่มผู้ใช้ใน Manage Data")
         st.stop()
-    return st.selectbox("เลือกผู้ใช้", users, key=key)
+    return st.selectbox(label, users, key=key)
 
 
-def explain_reason(row: dict) -> str:
-    parts = []
-    if row.get("similar_users"):
-        parts.append("คนที่รสนิยมคล้ายกันชอบ: " + escape(", ".join(row["similar_users"])))
-    if row.get("shared_drinks"):
-        parts.append("เชื่อมผ่านเครื่องดื่มที่ชอบเหมือนกัน: " + escape(", ".join(row["shared_drinks"])))
-    parts.append(f"ถูกใจ {row['like_count']} คน")
-    if row.get("dislike_count"):
-        parts.append(f"ไม่ชอบ {row['dislike_count']} คน")
-    return " • ".join(parts)
+def hero(m: dict) -> str:
+    all_d = get_drinks()
+    prefer = [d for d in ("มัทฉะLatte", "Bubble Milk Tea", "Cocoa", "Lemon Tea", "Green Tea", "Orange Juice") if d in all_d]
+    names = ([d for d in prefer if drink_image_uri(d)] or [d for d in all_d if drink_image_uri(d)] or all_d)[:4]
+    tilts = [-7, 3, -3, 6]
+    pols = "".join(
+        f'<div class="pol" style="transform:rotate({tilts[i % 4]}deg)">{thumb(n)}<span>{escape(n)}</span></div>'
+        for i, n in enumerate(names)
+    )
+    return (
+        '<div class="hero"><div>'
+        '<h1>DrinkGraph</h1>'
+        '<p>ดูว่าคนที่ชอบเหมือนคุณดื่มอะไร แล้วเลือกแก้วถัดไปอย่างมีเหตุผล</p>'
+        f'<div class="facts"><span><b>{m.get("users", 0)}</b>ผู้ใช้</span><span><b>{m.get("drinks", 0)}</b>เครื่องดื่ม</span>'
+        f'<span><b>{m.get("likes", 0)}</b>ความชอบ</span></div></div>'
+        f'<div class="pols">{pols}</div></div>'
+    )
 
 
+def rec_item(i: int, row: dict) -> str:
+    return (
+        f'<div class="ritem"><div class="rank">{i}</div>{thumb(row["drink"])}<div class="rbody">'
+        f'<div class="rtitle"><span class="nm">{escape(dlabel(row["drink"]))}</span><span class="dots"></span>'
+        f'<span class="sc">{pearls(row["score"], "score")}{row["score"]}</span></div>'
+        f'<div class="why"><span class="lab">คนที่ชอบแบบเดียวกัน</span>{chips(row["similar_users"], "user")}</div>'
+        f'<div class="why"><span class="lab">เชื่อมผ่านเครื่องดื่มที่ชอบเหมือนกัน</span>{chips(row["shared_drinks"], "drink", True)}</div>'
+        f'<div class="why">ถูกใจ {row["like_count"]} คน'
+        + (f' · ไม่ชอบ {row["dislike_count"]} คน' if row["dislike_count"] else "")
+        + '</div></div></div>'
+    )
+
+
+# ---------------------------------------------------------------------------
+# App shell
+# ---------------------------------------------------------------------------
 require_connection()
 
-with st.sidebar:
-    st.markdown("## 🍵 DrinkGraph")
-    st.caption("Neo4j Aura + Streamlit")
-    page = st.radio(
-        "เมนู",
-        ["Dashboard", "Recommendations", "Drink Search", "Like / Dislike", "Graph Explorer", "Manage Data (CRUD)", "Admin / Setup"],
-    )
-    st.divider()
-    st.caption("Graph Database Project")
+PAGES = {
+    "Dashboard": "📊 ภาพรวม",
+    "Recommendations": "✨ แนะนำเครื่องดื่ม",
+    "Drink Search": "🔎 ค้นหา",
+    "Like / Dislike": "❤️ บันทึกความชอบ",
+    "Graph Explorer": "🕸️ กราฟความสัมพันธ์",
+    "Manage Data (CRUD)": "🛠️ จัดการข้อมูล",
+    "Admin / Setup": "⚙️ ตั้งค่าระบบ",
+}
 
-st.markdown(
-    """
-    <div class="hero">
-      <h1>🍵 DrinkGraph Recommendation System</h1>
-      <p>ระบบแนะนำเครื่องดื่มด้วย Graph Database (Collaborative Filtering) ที่อธิบายเหตุผลของคำแนะนำได้</p>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+with st.sidebar:
+    st.markdown('<div class="brand">DrinkGraph</div><div class="brand-sub">Neo4j Aura + Streamlit</div>', unsafe_allow_html=True)
+    page = st.radio("เมนู", list(PAGES), format_func=PAGES.get, label_visibility="collapsed")
+
+metrics = get_dashboard_metrics()
+st.markdown(hero(metrics), unsafe_allow_html=True)
 
 if "_flash" in st.session_state:
     st.success(st.session_state.pop("_flash"))
 
 # ============================================================ Dashboard
 if page == "Dashboard":
-    st.subheader("ภาพรวมระบบ")
-    m = get_dashboard_metrics()
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Users", m.get("users", 0))
-    c2.metric("Drinks", m.get("drinks", 0))
-    c3.metric("LIKES", m.get("likes", 0))
-    c4.metric("DISLIKES", m.get("dislikes", 0))
-
-    stats = get_drink_stats()
-    if stats:
-        st.markdown("### ความนิยมของเครื่องดื่ม")
-        st.bar_chart(pd.DataFrame(stats).set_index("drink")[["likes", "dislikes"]])
-
-    st.divider()
-    user = user_selector("dash_user")
-    pref = get_preferences(user)
-    l, r = st.columns(2)
-    l.markdown(f"### ❤️ {user} ชอบ")
-    l.write(", ".join(dlabel(x) for x in pref["liked"]) or "ยังไม่มี")
-    r.markdown(f"### 😞 {user} ไม่ชอบ")
-    r.write(", ".join(dlabel(x) for x in pref["disliked"]) or "ยังไม่มี")
+    left, right = st.columns([3, 2], gap="large")
+    with left:
+        sec("เมนูยอดนิยม", "เม็ดไข่มุกดำ = คนที่ชอบ  ·  เม็ดแดง = คนที่ไม่ชอบ")
+        stats = get_drink_stats()
+        rows = "".join(
+            f'<div class="mrow">{thumb(s["drink"])}<span class="nm">{escape(dlabel(s["drink"]))}</span><span class="dots"></span>'
+            f'<span class="val">{pearls(s["likes"], "like")}<b class="like-n">{s["likes"]}</b>'
+            f'{pearls(s["dislikes"], "dislike")}<b class="dislike-n">{s["dislikes"]}</b></span></div>'
+            for s in stats
+        )
+        st.markdown(rows or "<p>ยังไม่มีเครื่องดื่ม</p>", unsafe_allow_html=True)
+    with right:
+        sec("โปรไฟล์ผู้ใช้")
+        user = user_selector("dash_user", "ดูความชอบของ")
+        pref = get_preferences(user)
+        st.markdown(
+            f'<div class="profile">{avatar(user, 64)}<h3>{escape(user)}</h3></div>'
+            f'<div class="why"><span class="lab">ชอบ</span>{chips(pref["liked"], "like", True)}</div>'
+            f'<div class="why"><span class="lab">ไม่ชอบ</span>{chips(pref["disliked"], "dislike", True)}</div>',
+            unsafe_allow_html=True,
+        )
 
 # ============================================================ Recommendations
 elif page == "Recommendations":
-    st.subheader("✨ เครื่องดื่มที่แนะนำ")
-    user = user_selector("rec_user")
-    top_n = st.slider("จำนวนคำแนะนำ", 3, 10, 5)
+    sec("แก้วถัดไปของคุณ")
+    c1, c2 = st.columns([2, 1])
+    with c1:
+        user = user_selector("rec_user", "แนะนำให้")
+    with c2:
+        top_n = st.slider("จำนวนคำแนะนำ", 3, 10, 5)
     rows = recommend_drinks(user, top_n)
-    st.caption(
-        "score = จำนวนเส้นทาง (เครื่องดื่มที่ชอบเหมือนกัน → คนอื่นที่ชอบเหมือนกัน → เครื่องดื่มใหม่) "
-        "และตัดเครื่องดื่มที่ผู้ใช้ชอบหรือไม่ชอบอยู่แล้วออก"
-    )
     if not rows:
-        st.info("ยังไม่มีคำแนะนำสำหรับผู้ใช้นี้")
-    for i, row in enumerate(rows, start=1):
-        uri = drink_image_uri(row["drink"])
-        img = (f'<img src="{uri}" style="width:96px;height:96px;object-fit:cover;border-radius:14px;flex:none">'
-               if uri else "")
-        st.markdown(
-            f"""
-            <div class="drink-card" style="display:flex;gap:1rem;align-items:center">
-              {img}
-              <div>
-                <span class="score-pill">#{i} · score {row['score']}</span>
-                <h3 style="margin:.55rem 0 .2rem 0">{escape(dlabel(row['drink']))}</h3>
-                <p style="margin:0"><b>เหตุผล:</b> {explain_reason(row)}</p>
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
+        st.info("ยังไม่มีคำแนะนำสำหรับผู้ใช้นี้ ลองเพิ่มความชอบในเมนู บันทึกความชอบ")
+    else:
+        st.markdown("".join(rec_item(i, r) for i, r in enumerate(rows, 1)), unsafe_allow_html=True)
+    with st.expander("score คำนวณอย่างไร"):
+        st.write(
+            "score = จำนวนเส้นทางในกราฟ: เครื่องดื่มที่ผู้ใช้ชอบ → คนอื่นที่ชอบเหมือนกัน → เครื่องดื่มอื่นที่คนกลุ่มนั้นชอบ "
+            "(ตัดเครื่องดื่มที่ผู้ใช้ชอบหรือไม่ชอบอยู่แล้วออก) ยิ่งมีเส้นทางมากยิ่งแนะนำน้ำหนักมาก"
         )
 
 # ============================================================ Search
 elif page == "Drink Search":
-    st.subheader("🔎 ค้นหาเครื่องดื่ม")
-    kw = st.text_input("ชื่อเครื่องดื่ม", placeholder="เช่น Tea, Latte, มัทฉะ")
+    sec("ค้นหาเครื่องดื่ม")
+    kw = st.text_input("ชื่อเครื่องดื่ม", placeholder="เช่น Tea, Latte, มัทฉะ", label_visibility="collapsed")
     rows = get_drink_stats(kw)
-    st.write(f"พบ {len(rows)} รายการ")
+    st.caption(f"พบ {len(rows)} รายการ")
     if rows:
-        cols = st.columns(5)
-        for i, r in enumerate(rows):
-            d = drink_image_data(r["drink"])
-            with cols[i % 5]:
-                if d:
-                    st.image(d[0], use_container_width=True)
-                st.caption(f"**{dlabel(r['drink'])}**  \nชอบ {r['likes']} · ไม่ชอบ {r['dislikes']}")
+        tiles = "".join(
+            f'<div class="tile">{thumb(r["drink"])}<div class="nm">{escape(dlabel(r["drink"]))}</div>'
+            f'<div class="val">{pearls(r["likes"], "like")}<b class="like-n">{r["likes"]}</b>'
+            f'{pearls(r["dislikes"], "dislike")}<b class="dislike-n">{r["dislikes"]}</b></div></div>'
+            for r in rows
+        )
+        st.markdown(f'<div class="tiles">{tiles}</div>', unsafe_allow_html=True)
         with st.expander("ดูเป็นตาราง"):
             df = pd.DataFrame(rows)
             df["drink"] = df["drink"].map(dlabel)
@@ -324,33 +437,42 @@ elif page == "Drink Search":
 
 # ============================================================ Like / Dislike
 elif page == "Like / Dislike":
-    st.subheader("📝 บันทึกความชอบ")
-    user = user_selector("pref_user")
+    sec("บอกว่าคุณชอบอะไร")
+    c1, c2 = st.columns(2)
+    with c1:
+        user = user_selector("pref_user", "ผู้ใช้")
     drinks = get_drinks()
     if not drinks:
         st.info("ยังไม่มีเครื่องดื่ม")
         st.stop()
-    drink = st.selectbox("เครื่องดื่ม", drinks, format_func=dlabel)
+    with c2:
+        drink = st.selectbox("เครื่องดื่ม", drinks, format_func=dlabel)
     pref = get_preferences(user)
-    status = "ชอบ" if drink in pref["liked"] else "ไม่ชอบ" if drink in pref["disliked"] else "ยังไม่ระบุ"
-    st.caption(f"สถานะปัจจุบันของ {user} กับ {drink}: **{status}**")
-    choice = st.radio("ความรู้สึก", ["❤️ ชอบ", "😞 ไม่ชอบ", "ล้างความรู้สึก"], horizontal=True)
-    if st.button("บันทึก", type="primary", use_container_width=True):
-        kind = {"❤️ ชอบ": "LIKES", "😞 ไม่ชอบ": "DISLIKES"}.get(choice)
-        set_preference(user, drink, kind)
-        flash("บันทึกแล้ว")
-        st.rerun()
+    status = "❤️ ชอบอยู่" if drink in pref["liked"] else "😞 ไม่ชอบอยู่" if drink in pref["disliked"] else "ยังไม่ระบุ"
+    pa, pb = st.columns([1, 1], gap="large")
+    with pa:
+        st.markdown(f'<div class="big">{thumb(drink)}</div>', unsafe_allow_html=True)
+    with pb:
+        st.markdown(f'<h3 style="margin:.2rem 0">{escape(dlabel(drink))}</h3><div class="sub">สถานะของ {escape(user)}: {status}</div>',
+                    unsafe_allow_html=True)
+        choice = st.radio("ความรู้สึก", ["❤️ ชอบ", "😞 ไม่ชอบ", "ล้างความรู้สึก"])
+        if st.button("บันทึก", type="primary"):
+            kind = {"❤️ ชอบ": "LIKES", "😞 ไม่ชอบ": "DISLIKES"}.get(choice)
+            set_preference(user, drink, kind)
+            flash("บันทึกแล้ว")
+            st.rerun()
 
 # ============================================================ Graph Explorer
 elif page == "Graph Explorer":
-    st.subheader("🕸️ Graph Explorer")
-    st.caption("เส้นเขียว = LIKES, เส้นแดงประ = DISLIKES (แสดงผู้ใช้ที่ชอบเครื่องดื่มเดียวกันด้วย)")
+    sec("กราฟรอบตัวคุณ", "เส้นเขียว = LIKES  ·  เส้นแดงประ = DISLIKES  ·  รวมคนอื่นที่ชอบเครื่องดื่มเดียวกัน")
     user = user_selector("graph_user")
     rows = graph_neighborhood(user)
     if not rows:
         st.info("ยังไม่มีข้อมูลความสัมพันธ์")
     else:
-        dot = ["digraph G {", 'rankdir="LR";', 'node [shape=box, style="rounded,filled", fillcolor="#f8fafc"];']
+        dot = ["digraph G {", 'rankdir="LR"; bgcolor="transparent";',
+               'node [shape=box, style="rounded,filled", fontname="Helvetica", color="#AEBBA9"];',
+               'edge [fontname="Helvetica", fontsize=10];']
         seen = set()
         for r in rows:
             for nid, label, name in [
@@ -359,10 +481,10 @@ elif page == "Graph Explorer":
             ]:
                 if nid not in seen:
                     safe = str(name).replace('"', "'")
-                    fill = "#dcfce7" if label == "Drink" else "#fef9c3"
+                    fill = "#E2F2E4" if label == "Drink" else "#FBF0D6"
                     dot.append(f'"{nid}" [label="{safe}\\n:{label}", fillcolor="{fill}"];')
                     seen.add(nid)
-            style = 'color="#16a34a"' if r["relationship"] == "LIKES" else 'color="#dc2626", style=dashed'
+            style = 'color="#2E8B47"' if r["relationship"] == "LIKES" else 'color="#C8322B", style=dashed'
             dot.append(f'"{r["source_id"]}" -> "{r["target_id"]}" [label="{r["relationship"]}", {style}];')
         dot.append("}")
         st.graphviz_chart("\n".join(dot), use_container_width=True)
